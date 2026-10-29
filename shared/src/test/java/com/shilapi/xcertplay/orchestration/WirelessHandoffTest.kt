@@ -171,8 +171,8 @@ class WirelessHandoffTest {
     }
 
     @Test
-    fun setupSessionWaitIsInsideTheExistingAnswerBound() {
-        assertEquals(10_000L, WirelessStartupPolicy.SETUP_SESSION_WAIT_MILLIS)
+    fun setupSessionWaitIsFiveSeconds() {
+        assertEquals(5_000L, WirelessStartupPolicy.SETUP_SESSION_WAIT_MILLIS)
         assertTrue(WirelessStartupPolicy.SETUP_SESSION_WAIT_MILLIS < WirelessStartupPolicy.FIRST_TCP_MILLIS)
     }
 
