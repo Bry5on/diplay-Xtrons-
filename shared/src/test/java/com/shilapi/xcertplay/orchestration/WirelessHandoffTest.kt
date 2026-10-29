@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.orchestration
 
+import java.io.IOException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,6 +24,51 @@ class WirelessHandoffTest {
                 handoffRequested = false,
                 tunnelActive = false,
                 sessionActive = false,
+            ),
+        )
+    }
+
+    @Test
+    fun rfcommEofAfterSessionOrRenderedFrameKeepsTheTunnel() {
+        val eof = IOException("iAP2 link ended")
+        assertTrue(isRfcommEofAfterAirPlaySession(eof, sessionActive = true, frameRendered = false))
+        assertTrue(isRfcommEofAfterAirPlaySession(eof, sessionActive = false, frameRendered = true))
+        assertTrue(isRfcommEofAfterAirPlaySession(eof, sessionActive = true, frameRendered = true))
+    }
+
+    @Test
+    fun earlyRfcommEofWithNoSessionStillFailsBringUp() {
+        // The bring-up catch calls fail + closeWirelessStack unless this is true.
+        assertFalse(
+            isRfcommEofAfterAirPlaySession(
+                IOException("iAP2 link ended"),
+                sessionActive = false,
+                frameRendered = false,
+            ),
+        )
+    }
+
+    @Test
+    fun otherBringUpFailuresStayFatalAfterASessionExists() {
+        assertFalse(
+            isRfcommEofAfterAirPlaySession(
+                IOException("Wireless CarPlay control channel closed before tunnel iAP2 ready"),
+                sessionActive = true,
+                frameRendered = true,
+            ),
+        )
+        assertFalse(
+            isRfcommEofAfterAirPlaySession(
+                IOException("iAP2 inbound frame exceeds 65535 bytes"),
+                sessionActive = true,
+                frameRendered = false,
+            ),
+        )
+        assertFalse(
+            isRfcommEofAfterAirPlaySession(
+                IllegalStateException("iAP2 link ended"),
+                sessionActive = true,
+                frameRendered = true,
             ),
         )
     }

@@ -153,6 +153,24 @@ internal fun isWirelessHandoffInProgress(
 ): Boolean = handoffRequested || tunnelActive || sessionActive
 
 /**
+ * True when an RFCOMM EOF should keep the Wi-Fi tunnel instead of failing bring-up.
+ *
+ * A clean Bluetooth EOF is [Iap2LinkEngine.feedEof], which dies with no reason. The link
+ * pump then throws [IOException] "iAP2 link ended", so [Iap2WirelessControlClient.run]
+ * never returns [Iap2WirelessControlTerminal.CHANNEL_CLOSED]. Once an AirPlay session is
+ * up, or a frame has rendered, that drop is the same keep-alive case as a clean close
+ * during handoff. Before either, the bring-up failure path still runs.
+ */
+internal fun isRfcommEofAfterAirPlaySession(
+    error: Throwable,
+    sessionActive: Boolean,
+    frameRendered: Boolean,
+): Boolean =
+    (sessionActive || frameRendered) &&
+        error is IOException &&
+        error.message?.contains("iAP2 link ended") == true
+
+/**
  * Wires the complete wired or wireless CarPlay path: MFi coprocessor discovery, iPhone bring-up,
  * iAP2 control, transport setup, and the AirPlay media/input sessions.
  *
@@ -1662,6 +1680,23 @@ class CarPlayController(
             }
         } catch (error: Throwable) {
             if (isStaleWirelessRun(generation)) {
+                return
+            }
+            // EOF throws instead of returning CHANNEL_CLOSED. After a session or a rendered
+            // frame, keep the Wi-Fi tunnel the same way that clean close does. wirelessActiveReported
+            // stays on its existing post-handoff path, and an early EOF still fails below.
+            if (
+                !wirelessActiveReported.get() &&
+                isRfcommEofAfterAirPlaySession(
+                    error,
+                    sessionActive = activeSession != null,
+                    frameRendered = wirelessConnectionProof.hasRenderedFrame(generation),
+                )
+            ) {
+                debugLog(
+                    "wireless RFCOMM ended after AirPlay session started; " +
+                        "keeping the Wi-Fi AirPlay tunnel alive",
+                )
                 return
             }
             if (wirelessActiveReported.get() && error !is Error) {
