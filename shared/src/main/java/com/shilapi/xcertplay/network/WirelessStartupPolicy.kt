@@ -8,6 +8,13 @@ object WirelessStartupPolicy {
     const val INTERFACE_POLL_MILLIS = 250L
     const val STABLE_SAMPLES = 3
     const val FIRST_TCP_MILLIS = 30_000L
+    /**
+     * After the phone's session SETUP (deviceID), RECORD should follow at once. The 30s first-TCP
+     * budget is only for joining Wi-Fi before any connection. An iPhone usually answers a mode
+     * request within a second and once took six, so re-enumeration waits 10s. This uses that same
+     * bound. TCP keepalive's 20s peer-health deadline does not fail wireless bring-up.
+     */
+    const val SETUP_SESSION_WAIT_MILLIS = 10_000L
     const val MAX_STARTUP_RETRIES = 5
     const val STABLE_SESSION_MILLIS = 60_000L
 }

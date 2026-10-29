@@ -40,7 +40,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".hudtest"
-            versionNameSuffix = "-hud-test"
+            versionNameSuffix = "-hud-test-2"
         }
         release {
             optimization {
@@ -55,6 +55,15 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+}
+
+// The side-by-side hudtest build must sort above the previous test APK (versionCode 41).
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.outputs.forEach { output ->
+            output.versionCode.set(42)
+        }
     }
 }
 
