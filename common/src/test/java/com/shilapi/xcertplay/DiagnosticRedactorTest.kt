@@ -77,6 +77,8 @@ class DiagnosticRedactorTest {
             "adapter=abcd1234 settings=abcd1234 wifi=ffff0000 adapterMatchesSettings=yes " +
             "iap2Transport=blue airplayBluetoothIDs=same-as-iap2 vendorMac=not-exposed"
         assertEquals(line, DiagnosticRedactor.redact(line))
+        val probes = "Bluetooth identity: probes adapter=unusable secure=absent sysfs=3f46b40a chosen=sysfs localBit=clear"
+        assertEquals(probes, DiagnosticRedactor.redact(probes))
         assertNull(DiagnosticRedactor.redact("Bluetooth identity: iap2Name=blue"))
     }
 

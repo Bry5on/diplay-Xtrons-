@@ -22,11 +22,44 @@ class BluetoothIdentityTest {
         assertTrue(line.contains("advertisedSource=adapter"))
         assertTrue(line.contains("adapterMatchesSettings=yes"))
         assertTrue(line.contains("iap2Transport=blue"))
+        assertTrue(line.contains("chosen=unspecified"))
         assertTrue(line.contains("vendorMac=not-exposed"))
         assertTrue(!line.contains(adapter))
         val other = BluetoothIdentity.line("99:88:77:66:55:44", adapter, adapter, null, role = "visible")
         assertTrue(other.contains("advertisedSource=other"))
         assertTrue(other.contains("wifi=absent"))
+    }
+}
+
+class BluetoothControllerAddressTest {
+    @Test fun aReadableControllerAddressReplacesTheSyntheticIdentity() {
+        val radio = "04:BB:CC:DD:EE:10"
+        val synthetic = "02:11:22:33:44:55"
+        val found = BluetoothControllerAddress.select(
+            listOf(
+                "adapter" to "02:00:00:00:00:00",
+                "secure" to null,
+                "sysfs" to radio,
+            ),
+            synthetic,
+        )
+        assertEquals(radio, found.address)
+        assertEquals("sysfs", found.chosen)
+        assertEquals("clear", found.localBit)
+        assertTrue(found.probes.contains("adapter=unusable"))
+        assertTrue(found.probes.contains("secure=absent"))
+        assertTrue(!found.probes.contains(radio))
+    }
+
+    @Test fun theIdentityHashIsUsedOnlyWhenNoControllerAddressIsReadable() {
+        val synthetic = "02:11:22:33:44:55"
+        val found = BluetoothControllerAddress.select(
+            listOf("adapter" to "02:00:00:00:00:00", "secure" to null, "sysfs" to "not-a-mac"),
+            synthetic,
+        )
+        assertEquals(synthetic, found.address)
+        assertEquals("synthetic", found.chosen)
+        assertEquals("set", found.localBit)
     }
 }
 

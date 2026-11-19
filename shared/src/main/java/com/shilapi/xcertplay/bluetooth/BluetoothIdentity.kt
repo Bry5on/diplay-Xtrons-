@@ -14,6 +14,13 @@ internal object BluetoothIdentity {
             !mac.equals("00:00:00:00:00:00", ignoreCase = true) &&
             !mac.startsWith("02:00:00:00:00:", ignoreCase = true)
 
+    /** `set` when the address is locally administered, which the identity fallback always is. */
+    fun localBit(mac: String?): String {
+        if (mac.isNullOrBlank() || !MAC.matches(mac)) return "absent"
+        val first = mac.substring(0, 2).toInt(16)
+        return if (first and 0x02 != 0) "set" else "clear"
+    }
+
     /** Eight hex characters. Equal digests mean the same address; this is not the address. */
     fun token(mac: String?): String {
         if (mac.isNullOrBlank()) return "absent"
@@ -30,7 +37,15 @@ internal object BluetoothIdentity {
             ?.joinToString(":") { "%02X".format(it) }
     }.getOrNull()
 
-    fun line(advertised: String?, adapter: String?, settings: String?, wifi: String?, role: String): String {
+    fun line(
+        advertised: String?,
+        adapter: String?,
+        settings: String?,
+        wifi: String?,
+        role: String,
+        chosen: String = "unspecified",
+        localBit: String = "unknown",
+    ): String {
         val source = when {
             usable(adapter) && advertised.equals(adapter, ignoreCase = true) -> "adapter"
             usable(settings) && advertised.equals(settings, ignoreCase = true) -> "settings"
@@ -45,6 +60,7 @@ internal object BluetoothIdentity {
         return "Bluetooth identity: role=$role advertisedSource=$source " +
             "advertised=${token(advertised)} adapter=${token(adapter)} settings=${token(settings)} " +
             "wifi=${token(wifi)} adapterMatchesSettings=$settingsMatch " +
-            "iap2Transport=blue airplayBluetoothIDs=same-as-iap2 vendorMac=not-exposed"
+            "iap2Transport=blue airplayBluetoothIDs=same-as-iap2 vendorMac=not-exposed " +
+            "chosen=$chosen localBit=$localBit"
     }
 }

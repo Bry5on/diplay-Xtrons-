@@ -1465,10 +1465,19 @@ class CarPlayController(
             if (!adapter.isEnabled) throw IOException(BluetoothRadioCheck.RADIO_OFF)
             if (!bluetoothRecoveryComplete) throw IOException("Bluetooth recovery did not complete before the handshake")
             val device = selectWirelessBluetoothDevice(adapter)
-            val hostBluetoothMac = accessoryBluetoothMac(adapter)
+            val controllerAddress = com.shilapi.xcertplay.bluetooth.BluetoothControllerAddress.read(
+                appContext,
+                adapterAddress = runCatching { adapter.address }.getOrNull(),
+                synthetic = airPlayConfig.btMac,
+            )
+            val hostBluetoothMac = controllerAddress.address
             debugLog(
                 "wireless selected Bluetooth target name=${device.name ?: "unknown"} " +
                     "address=${device.address} localBt=$hostBluetoothMac",
+            )
+            debugLog(
+                "Bluetooth identity: probes ${controllerAddress.probes} " +
+                    "chosen=${controllerAddress.chosen} localBit=${controllerAddress.localBit}",
             )
             debugLog(
                 com.shilapi.xcertplay.bluetooth.BluetoothIdentity.line(
@@ -1479,6 +1488,8 @@ class CarPlayController(
                     }.getOrNull(),
                     wifi = com.shilapi.xcertplay.bluetooth.BluetoothIdentity.wifiAddress(),
                     role = "sent",
+                    chosen = controllerAddress.chosen,
+                    localBit = controllerAddress.localBit,
                 ),
             )
             val wirelessAirPlayConfig = airPlayConfig.copy(
@@ -3046,26 +3057,6 @@ class CarPlayController(
         return synchronized(devices) { devices.toSet() }
     }
 
-    @Suppress("DEPRECATION")
-    private fun accessoryBluetoothMac(adapter: BluetoothAdapter): String {
-        val address = try {
-            adapter.address
-        } catch (_: SecurityException) {
-            null
-        }
-        val settingsAddress = try {
-            Settings.Secure.getString(appContext.contentResolver, "bluetooth_address")
-        } catch (_: SecurityException) {
-            null
-        }
-        return listOfNotNull(address, settingsAddress)
-            .firstOrNull {
-                BLUETOOTH_ADDRESS.matches(it) &&
-                    !it.equals(ADAPTER_ADDRESS_PLACEHOLDER, ignoreCase = true)
-            }
-            ?: airPlayConfig.btMac
-    }
-
     private fun flipWirelessAddressFamily(generation: Int) = synchronized(wirelessResourceLock) {
         if (isStaleWirelessRun(generation)) return@synchronized
         val published = wirelessPublishedAddress
@@ -3422,6 +3413,5 @@ class CarPlayController(
         private const val START_SESSION_PROGRESS = "iap2 tx=0x4301"
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"
-        private val BLUETOOTH_ADDRESS = Regex("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
     }
 }

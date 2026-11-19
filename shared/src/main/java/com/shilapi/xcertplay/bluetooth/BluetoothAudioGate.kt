@@ -458,8 +458,15 @@ object BluetoothAudioGate {
         val settings = runCatching {
             android.provider.Settings.Secure.getString(context.contentResolver, "bluetooth_address")
         }.getOrNull()
-        val advertised = listOf(adapterAddress, settings).firstOrNull { BluetoothIdentity.usable(it) }
-        publish(BluetoothIdentity.line(advertised, adapterAddress, settings, BluetoothIdentity.wifiAddress(), role = "visible"))
+        val found = BluetoothControllerAddress.read(context, adapterAddress, synthetic = "")
+        val advertised = found.address.takeIf { it.isNotBlank() }
+        publish(
+            BluetoothIdentity.line(
+                advertised, adapterAddress, settings, BluetoothIdentity.wifiAddress(),
+                role = "visible", chosen = found.chosen, localBit = found.localBit,
+            ),
+        )
+        publish("Bluetooth identity: probes ${found.probes} chosen=${found.chosen} localBit=${found.localBit}")
     }
 
     private fun logVendorDisconnect(context: Context, device: android.bluetooth.BluetoothDevice?) {
