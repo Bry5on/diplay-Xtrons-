@@ -12,6 +12,10 @@ class GocHandsfreeTest {
         assertTrue(GocHandsfree.isCommandChannel("MG3\n"))
         assertFalse(GocHandsfree.isCommandChannel("random binary ok data"))
         assertTrue(GocHandsfree.hasAtCommand("at#cd"))
+        assertEquals("IV", GocHandsfree.matchedWord("IV\r"))
+        assertEquals("AT#CD", GocHandsfree.matchedWord("AT#CD\r\n"))
+        assertEquals("status-only", GocHandsfree.disconnectSkip(identified = true, atConfirmed = false))
+        assertEquals(null, GocHandsfree.disconnectSkip(identified = true, atConfirmed = true))
     }
 
     @Test fun disconnectAndReconnectStayOnHandsFree() {
@@ -48,7 +52,8 @@ class GocHandsfreeTest {
         assertTrue(masked.contains("[number]"))
         val line = GocHandsfree.serialLine("ttyBT0", "AT#CD\r\n".toByteArray())
         assertTrue(line.startsWith("Bluetooth module serial: node=ttyBT0 text="))
-        assertTrue(line.contains("hex=4154234344"))
+        assertTrue(line.contains("bytes=41542343.440d0a"))
+        assertFalse(line.contains("hex="))
         assertFalse(line.contains("name="))
     }
 }

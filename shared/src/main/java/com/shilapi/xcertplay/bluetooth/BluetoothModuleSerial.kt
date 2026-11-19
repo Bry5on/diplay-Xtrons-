@@ -29,6 +29,7 @@ internal object BluetoothModuleSerial {
         disconnectSends.set(0)
         restored.set(false)
         command.set(null)
+        lastNodeConfirmed = false
         val thread = Thread(::loop, "diplay-goc-serial").apply { isDaemon = true }
         reader = thread
         thread.start()
@@ -57,6 +58,10 @@ internal object BluetoothModuleSerial {
             publish("Bluetooth module serial: restore skipped reason=no-command-channel")
             return
         }
+        if (!lastNodeConfirmed) {
+            publish("Bluetooth module serial: restore skipped reason=status-only")
+            return
+        }
         writeCommand(node, GocHandsfree.RECONNECT, "restore")
         writeCommand(node, GocHandsfree.QUERY, "query")
     }
@@ -73,6 +78,7 @@ internal object BluetoothModuleSerial {
     private val disconnectSends = AtomicInteger()
     private val restored = AtomicBoolean(false)
     @Volatile private var lastNode: String? = null
+    @Volatile private var lastNodeConfirmed = false
 
     private fun loop() {
         val opens = GocHandsfree.NODES.map { path -> openRead(path) }
@@ -92,6 +98,7 @@ internal object BluetoothModuleSerial {
         var replyLogged = false
         var writeFailures = 0
         var commandSkipLogged = false
+        var statusOnlyLogged = false
         try {
             while (running.get()) {
                 val polls = openFds.map { fd ->
@@ -110,15 +117,17 @@ internal object BluetoothModuleSerial {
                         val chunk = takeChunk(queue)
                         if (chunk.isEmpty()) break
                         val sample = String(chunk, Charsets.ISO_8859_1)
-                        if (GocHandsfree.isCommandChannel(sample)) {
+                        val word = GocHandsfree.matchedWord(sample)
+                        if (word != null) {
                             val at = GocHandsfree.hasAtCommand(sample)
                             if (identified == null || (at && !identifiedByAt && cycle.sends == 0)) {
                                 identified = opened.node
                                 lastNode = opened.node
                                 identifiedByAt = at
+                                if (at) lastNodeConfirmed = true
                                 publish(
                                     "Bluetooth module serial: command-node=${opened.node} " +
-                                        "reason=${if (at) "at-command" else "status"}",
+                                        "reason=${if (at) "at-command" else "status"} token=$word",
                                 )
                             }
                         }
@@ -135,7 +144,13 @@ internal object BluetoothModuleSerial {
                         logChunk(opened.node, chunk, windows, counts, skipped)
                     }
                 }
-                maybeSend(identified, cycle, writeFailures, commandSkipLogged) { sentAt, failed, skipped ->
+                if (disconnectWanted.get() && commandsAllowed.get() && identified != null && !identifiedByAt &&
+                    cycle.sends == 0 && !statusOnlyLogged
+                ) {
+                    publish("Bluetooth module serial: hfp-disconnect skipped reason=status-only")
+                    statusOnlyLogged = true
+                }
+                maybeSend(identified, identifiedByAt, cycle, writeFailures, commandSkipLogged) { sentAt, failed, skipped ->
                     if (sentAt > 0L) {
                         disconnectSentAt = sentAt
                         replyLogged = false
@@ -151,11 +166,12 @@ internal object BluetoothModuleSerial {
                 }
             }
             val node = identified
-            if (node != null && cycle.sends > 0 && !restored.get()) {
+            if (node != null && identifiedByAt && cycle.sends > 0 && !restored.get()) {
                 writeCommand(node, GocHandsfree.RECONNECT, "restore")
                 writeCommand(node, GocHandsfree.QUERY, "query")
-            } else if (cycle.sends == 0 && disconnectWanted.get() && commandsAllowed.get()) {
-                publish("Bluetooth module serial: hfp-disconnect skipped reason=no-command-channel")
+            } else if (cycle.sends == 0 && disconnectWanted.get() && commandsAllowed.get() && !statusOnlyLogged) {
+                val reason = GocHandsfree.disconnectSkip(identified != null, identifiedByAt)
+                publish("Bluetooth module serial: hfp-disconnect skipped reason=$reason")
             }
         } finally {
             openFds.forEach { runCatching { Os.close(it.fd) } }
@@ -164,6 +180,7 @@ internal object BluetoothModuleSerial {
 
     private fun maybeSend(
         identified: String?,
+        atConfirmed: Boolean,
         cycle: GocHandsfree.Cycle,
         writeFailures: Int,
         skipLogged: Boolean,
@@ -171,6 +188,11 @@ internal object BluetoothModuleSerial {
     ) {
         val requested = command.get()
         val node = identified
+        if (requested == GocHandsfree.RECONNECT && node != null && !atConfirmed) {
+            command.compareAndSet(requested, null)
+            publish("Bluetooth module serial: restore skipped reason=status-only")
+            return
+        }
         if (requested != null && (!commandsAllowed.get() || node == null)) {
             if (!skipLogged) {
                 publish("Bluetooth module serial: write skipped reason=no-command-channel command=${requested.trim()}")
@@ -180,8 +202,8 @@ internal object BluetoothModuleSerial {
         }
         val next = when {
             requested == GocHandsfree.RECONNECT -> GocHandsfree.RECONNECT
-            requested == GocHandsfree.DISCONNECT && !cycle.stopped -> GocHandsfree.DISCONNECT
-            disconnectWanted.get() && !cycle.stopped && cycle.sends == 0 && writeFailures < 2 -> GocHandsfree.DISCONNECT
+            requested == GocHandsfree.DISCONNECT && atConfirmed && !cycle.stopped -> GocHandsfree.DISCONNECT
+            disconnectWanted.get() && atConfirmed && !cycle.stopped && cycle.sends == 0 && writeFailures < 2 -> GocHandsfree.DISCONNECT
             else -> return
         }
         if (node == null) return

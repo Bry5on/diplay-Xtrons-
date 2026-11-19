@@ -81,6 +81,34 @@ class DiagnosticRedactorTest {
         assertEquals(probes, DiagnosticRedactor.redact(probes))
         assertNull(DiagnosticRedactor.redact("Bluetooth identity: iap2Name=blue"))
         val module = "Bluetooth module: uart node=ttyS0 exists=true readable=false writable=true"
+        val serial = "Bluetooth module serial: node=BT_serial text=IV. bytes=49560d"
+        val named = "Bluetooth module serial: command-node=BT_serial reason=status token=IV"
+        val command = "Bluetooth module serial: command-node=ttyBT0 reason=at-command token=AT#CD"
+        assertEquals(serial, DiagnosticRedactor.redact(serial))
+        assertEquals(named, DiagnosticRedactor.redact(named))
+        assertEquals(command, DiagnosticRedactor.redact(command))
+        assertNull(DiagnosticRedactor.redact("Bluetooth module serial: node=BT_serial text=IV hex=4956"))
+        val folder = Files.createTempDirectory("diplay-serial-report").toFile()
+        try {
+            val traffic = "Bluetooth module serial: node=BT_serial text=IV.AT#CY.. bytes=49560d41.54234359.0d0a"
+            val wide = "Bluetooth module serial: node=ttyS1 text=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA bytes=41414141.41414141.41414141.41414141.41414141.41414141"
+            SessionLogFile(folder.resolve("diplay.log")).use {
+                it.reset("started")
+                it.append(traffic)
+                it.append(named)
+                it.append(command)
+                it.append(wide)
+                it.append("Bluetooth module serial: hfp-disconnect skipped reason=status-only")
+            }
+            val report = folder.resolve("diplay.log").readText()
+            assertTrue(report.contains("node=BT_serial"))
+            assertTrue(report.contains("bytes="))
+            assertTrue(report.contains("token=IV"))
+            assertTrue(report.contains("token=AT#CD"))
+            assertTrue(report.contains("reason=status-only"))
+            assertTrue(report.contains("node=ttyS1"))
+            assertFalse(report.contains("hex="))
+        } finally { folder.deleteRecursively() }
         assertEquals(module, DiagnosticRedactor.redact(module))
         val property = "Bluetooth module: property key=persist.bluetooth.hfp value=off"
         assertEquals(property, DiagnosticRedactor.redact(property))

@@ -9,7 +9,7 @@ package com.shilapi.xcertplay.bluetooth
  * and answers MG1 ready through MG6 ongoing call.
  *
  * AT#CZ resets the whole module and drops every link, including SPP, so it is never sent.
- * Nothing is written until a node has already shown this command or status traffic.
+ * A status word can name a node, but a write waits until that same node has shown an AT# command.
  */
 internal object GocHandsfree {
     const val DISCONNECT = "AT#CD\r\n"
@@ -17,10 +17,10 @@ internal object GocHandsfree {
     const val QUERY = "AT#CY\r\n"
     val NODES = listOf("/dev/BT_serial", "/dev/ttyBT0", "/dev/ttyS1")
 
-    private val commandChannel = Regex(
-        """(?i)AT#|(?:^|[\r\n])\s*(IA|IV|II|MG[1-6]|MU[1-5]|SC|SD|IS|MF)\s*(?:$|[\r\n])""",
+    private val atCommand = Regex("""(?i)AT#[A-Za-z0-9]*""")
+    private val statusWord = Regex(
+        """(?i)(?:^|[\r\n])\s*(IA|IV|II|MG[1-6]|MU[1-5]|SC|SD|IS|MF)\s*(?:$|[\r\n])""",
     )
-    private val atCommand = Regex("""(?i)AT#""")
     private val hfpDown = Regex("""(?i)(?:^|[\r\n\s])(IA|II|MG1)(?=$|[\r\n\s])""")
     private val hfpUp = Regex("""(?i)(?:^|[\r\n\s])(IV|MG[3-6])(?=$|[\r\n\s])""")
     private val labeledSecret = Regex(
@@ -32,9 +32,22 @@ internal object GocHandsfree {
 
     fun nodeName(path: String): String = path.substringAfterLast('/')
 
-    fun isCommandChannel(sample: String): Boolean = commandChannel.containsMatchIn(sample)
+    /** The AT# command, or the status word, from one chunk. Null when the chunk is neither. */
+    fun matchedWord(sample: String): String? {
+        atCommand.find(sample)?.let { return it.value.uppercase() }
+        return statusWord.find(sample)?.groupValues?.get(1)?.uppercase()
+    }
+
+    fun isCommandChannel(sample: String): Boolean = matchedWord(sample) != null
 
     fun hasAtCommand(sample: String): Boolean = atCommand.containsMatchIn(sample)
+
+    /** Null when a disconnect write is allowed. */
+    fun disconnectSkip(identified: Boolean, atConfirmed: Boolean): String? = when {
+        atConfirmed -> null
+        identified -> "status-only"
+        else -> "no-command-channel"
+    }
 
     fun hfpDown(sample: String): Boolean = hfpDown.containsMatchIn(sample)
 
@@ -50,7 +63,8 @@ internal object GocHandsfree {
         val shown = bytes.take(48).toByteArray()
         val text = mask(String(shown, Charsets.ISO_8859_1).replace(Regex("[^\\p{Print}]"), "."))
         val hex = shown.joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        return "Bluetooth module serial: node=$node text=$text hex=$hex"
+        val grouped = hex.chunked(8).joinToString(".")
+        return "Bluetooth module serial: node=$node text=$text bytes=$grouped"
     }
 
     /**
