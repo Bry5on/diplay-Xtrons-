@@ -15,6 +15,7 @@ import com.shilapi.xcertplay.network.XtronsIxHeadUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -65,6 +66,11 @@ object BluetoothAudioGate {
     private var vendorLogged = false
     private var radioCycled = false
     private var cycleWaiting = false
+    private var lastReturnCycleAt = -1L
+    private var watchMediaUntil = 0L
+    private var returnTask: ScheduledFuture<*>? = null
+    private val modes = CarPlayModeTracker()
+    private var lastModesLine = ""
     private var receiverRegistered = false
     private var appContext: Context? = null
     private var reportLog: (String) -> Unit = {}
@@ -145,6 +151,40 @@ object BluetoothAudioGate {
             if (session) return@execute
             appContext = app
             restore()
+        }
+    }
+
+    /** iOS reported phone-call or Siri state. A call that ends may cycle the radio once. */
+    fun onModesChanged(params: Map<String, Any?>) {
+        worker.execute {
+            val event = modes.apply(CarPlayModes.parse(params))
+            val line = "Bluetooth audio: modes phoneCall=${modes.phoneLabel()} " +
+                "speech=${modes.speechLabel()} busy=${modes.busy} event=$event"
+            if (line != lastModesLine) {
+                lastModesLine = line
+                publish(line)
+            }
+            when (event) {
+                "started" -> returnTask?.cancel(false)
+                "ended" -> {
+                    returnTask?.cancel(false)
+                    returnTask = later.schedule(
+                        { worker.execute { returnMusicAfterCall() } },
+                        CarPlayModes.RETURN_DEBOUNCE_MILLIS,
+                        TimeUnit.MILLISECONDS,
+                    )
+                }
+            }
+        }
+    }
+
+    /** A CarPlay audio stream opened. Used to see whether music came back after a return cycle. */
+    fun noteCarPlayAudioStream(type: Int) {
+        if (type != 102) return
+        worker.execute {
+            if (System.nanoTime() < watchMediaUntil) {
+                publish("Bluetooth audio: media returned type=102 after hfp-return")
+            }
         }
     }
 
@@ -234,6 +274,11 @@ object BluetoothAudioGate {
                 vendorLogged = false
                 radioCycled = false
                 cycleWaiting = false
+                lastReturnCycleAt = -1L
+                watchMediaUntil = 0L
+                returnTask?.cancel(false)
+                modes.reset()
+                lastModesLine = ""
                 reconnects.set(0)
                 radioRestarts.set(0)
                 unregister(context)
@@ -259,6 +304,11 @@ object BluetoothAudioGate {
         vendorLogged = false
         radioCycled = false
         cycleWaiting = false
+        lastReturnCycleAt = -1L
+        watchMediaUntil = 0L
+        returnTask?.cancel(false)
+        modes.reset()
+        lastModesLine = ""
         reconnects.set(0)
         radioRestarts.set(0)
         unregister(context)
@@ -320,9 +370,48 @@ object BluetoothAudioGate {
             return
         }
         radioCycled = true
+        performCycle(adapter, reason = "session-start", signal = "session-start")
+    }
+
+    private fun returnMusicAfterCall() {
+        val context = appContext
+        if (context == null || !returnCycleAllowed(context)) {
+            publish("Bluetooth audio: hfp-return skipped reason=not-this-head-unit")
+            return
+        }
+        val since = if (lastReturnCycleAt < 0) Long.MAX_VALUE
+        else TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - lastReturnCycleAt)
+        val skip = CarPlayModes.skipReturn(modes.busy, since, cycleWaiting)
+        if (skip != null) {
+            publish("Bluetooth audio: hfp-return skipped reason=$skip")
+            return
+        }
+        val adapter = adapter(context) ?: run {
+            publish("Bluetooth audio: hfp-return skipped reason=adapter-missing")
+            return
+        }
+        lastReturnCycleAt = System.nanoTime()
+        watchMediaUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(25)
+        publish("Bluetooth audio: hfp-return signal=modesChanged")
+        performCycle(adapter, reason = "call-ended", signal = "modesChanged")
+    }
+
+    private fun returnCycleAllowed(context: Context): Boolean {
+        if (!session || !BluetoothAudioPreference.enabled(context)) return false
+        return prefs(context).getBoolean(KEY_PROFILES, false) || XtronsIxHeadUnit.detected
+    }
+
+    private fun performCycle(adapter: BluetoothAdapter, reason: String, signal: String) {
+        if (cycleWaiting) {
+            publish("Bluetooth audio: radio cycle skipped reason=in-progress trigger=$reason")
+            return
+        }
         val enabledNow = runCatching { adapter.isEnabled }.getOrNull() == true
         val disabled = if (enabledNow) runCatching { adapter.disable() }.getOrDefault(false) else false
-        publish("Bluetooth audio: radio cycle off result=${if (enabledNow) disabled.toString() else "already-off"}")
+        publish(
+            "Bluetooth audio: radio cycle off result=${if (enabledNow) disabled.toString() else "already-off"} " +
+                "reason=$reason signal=$signal",
+        )
         if (!enabledNow || disabled) {
             cycleWaiting = true
             later.schedule({ worker.execute { finishRadioCycle() } }, 8, TimeUnit.SECONDS)

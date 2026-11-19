@@ -727,6 +727,9 @@ class AirPlaySession(
                     )
                     if (streamResponse != null) {
                         activeStreams.add(type)
+                        if (type == STREAM_TYPE_MAIN_HIGH_AUDIO) {
+                            com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.noteCarPlayAudioStream(type)
+                        }
                         result.add(streamResponse)
                     }
                 }
