@@ -480,6 +480,10 @@ class CarPlayController(
             debugLog(
                 "AirPlay command type=$type params=${params.keys.sorted().joinToString(",")}",
             )
+            if (isBluetoothHandoffCommand(type)) {
+                val deviceId = (params["deviceID"] as? String) ?: (params["deviceId"] as? String)
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.noteIosDisableBluetooth(deviceId)
+            }
             if (
                 config.transport == CarPlayTransport.WIRELESS &&
                 !closed &&

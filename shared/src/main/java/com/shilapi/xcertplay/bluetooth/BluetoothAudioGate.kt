@@ -21,20 +21,26 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Keeps factory Bluetooth audio off the CarPlay iPhone once wireless startup no longer needs it.
  *
- * Hands-free (HFP) and music (A2DP) are disconnected and, when the platform allows, marked so they
- * do not reconnect until CarPlay ends. The Bluetooth radio stays on. An app-owned RFCOMM socket is
- * not closed here. If a profile API is missing or rejected, this logs that and leaves the link up.
+ * Hands-free (HFP) and music (A2DP) are disconnected when the profile services answer. On a head
+ * unit where those services never connect, the Bluetooth radio is turned off for the rest of the
+ * session and turned back on before the next RFCOMM bootstrap. An app-owned RFCOMM socket is not
+ * closed here, and the bond is not removed.
  */
 object BluetoothAudioGate {
     private const val TAG = "DiPlay-BtAudio"
     private const val PREFS = "diplay_bluetooth_audio"
     private const val JOURNAL = "journal"
+    private const val KEY_RADIO = "radio_disabled_by_us"
+    private const val KEY_PROFILES = "profiles_unavailable"
     private const val PROXY_TIMEOUT_MILLIS = 2_000L
-    private const val RESTORE_WAIT_MILLIS = 4_000L
+    private const val RESTORE_WAIT_MILLIS = 8_000L
     private const val MAX_RECONNECTS = 6
 
     private val worker = Executors.newSingleThreadExecutor { task ->
         Thread(task, "diplay-bt-audio").apply { isDaemon = true }
+    }
+    private val later = Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "diplay-bt-audio-watch").apply { isDaemon = true }
     }
     private val actuator = BluetoothAudioActuator(::publish)
     private val reconnects = AtomicInteger()
@@ -50,6 +56,7 @@ object BluetoothAudioGate {
     private var bootstrapReleased = false
     private var phone: String? = null
     private var holding = false
+    private var stacksLogged = false
     private var receiverRegistered = false
     private var appContext: Context? = null
     private var reportLog: (String) -> Unit = {}
@@ -128,6 +135,15 @@ object BluetoothAudioGate {
         }
     }
 
+    /** iOS asked this accessory to drop Bluetooth. The address is kept for the disconnect and never logged. */
+    fun noteIosDisableBluetooth(deviceId: String?) {
+        worker.execute {
+            val id = deviceId?.trim()?.takeIf { it.isNotEmpty() }
+            if (id != null) phone = id
+            publish("Bluetooth audio: iOS disableBluetooth received target=${if (id == null) "unknown" else "carplay-phone"}")
+        }
+    }
+
     fun setEnabled(context: Context, enabled: Boolean) {
         BluetoothAudioPreference.setEnabled(context, enabled)
         val app = context.applicationContext
@@ -143,7 +159,8 @@ object BluetoothAudioGate {
             "choice=${BluetoothAudioPreference.choice(context)} " +
             "xtronsIx=${XtronsIxHeadUnit.detected} holding=$holding " +
             "bootstrap=${if (bootstrapReleased) "released" else "held"} " +
-            "session=${if (session) "up" else "down"}"
+            "session=${if (session) "up" else "down"} " +
+            "radio=${if (radioOff(context)) "off-by-diplay" else "unchanged"}"
     }
 
     private fun drop() {
@@ -153,6 +170,13 @@ object BluetoothAudioGate {
             if (enabled && session && !bootstrapReleased) {
                 publish("Bluetooth audio: waiting until the RFCOMM bootstrap is released")
             }
+            return
+        }
+        if (prefs(context).getBoolean(KEY_PROFILES, false)) {
+            holding = true
+            register(context)
+            publish("Bluetooth audio: profile services skipped reason=unavailable-last-session")
+            silenceRadio(context)
             return
         }
         val remember = !holding
@@ -171,12 +195,28 @@ object BluetoothAudioGate {
         register(context)
         FactoryBluetoothSnapshot.log(context, reportLog)
         publish("Bluetooth audio: drop requested holding=true remembered=${saved.size}")
+        if (saved.isEmpty()) {
+            prefs(context).edit().putBoolean(KEY_PROFILES, true).commit()
+            silenceRadio(context)
+        } else {
+            prefs(context).edit().remove(KEY_PROFILES).commit()
+        }
     }
 
     private fun restore() {
         val context = appContext ?: return
+        restoreRadio(context)
         val saved = remembered(context)
-        if (saved.isEmpty() && !holding) return
+        if (saved.isEmpty()) {
+            if (holding) {
+                holding = false
+                stacksLogged = false
+                reconnects.set(0)
+                unregister(context)
+                publish("Bluetooth audio: factory profiles restored")
+            }
+            return
+        }
         val ok = withClients(context) { clients ->
             if (saved.isEmpty()) true
             else clients.all { client ->
@@ -190,9 +230,135 @@ object BluetoothAudioGate {
             publish("Bluetooth audio: restore incomplete; journal kept")
         }
         holding = false
+        stacksLogged = false
         reconnects.set(0)
         unregister(context)
         FactoryBluetoothSnapshot.log(context, reportLog)
+    }
+
+    /**
+     * Profile services did not change any link. Ask the adapter to disconnect the iPhone, and if
+     * the link is still up (or the adapter will not say), turn the radio off until CarPlay ends.
+     */
+    private fun silenceRadio(context: Context) {
+        logStacks(context)
+        val adapter = adapter(context) ?: run {
+            publish("Bluetooth audio: radio disable result=false reason=adapter-missing")
+            return
+        }
+        val before = connectionState(adapter)
+        publish("Bluetooth audio: link connectionState=${BluetoothLinkPlan.stateName(before)}")
+        val device = phoneDevice(adapter)
+        val reflection = BluetoothLinkMethods.disconnect(bluetoothService(adapter), device)
+        publish("Bluetooth audio: link drop method=reflection result=$reflection")
+        val after = connectionState(adapter)
+        if (!BluetoothLinkPlan.powerOffRadio(after)) {
+            publish("Bluetooth audio: link dropped connectionState=disconnected")
+            clearRadio(context)
+            return
+        }
+        val disabled = runCatching { adapter.disable() }.getOrDefault(false)
+        if (disabled) markRadio(context)
+        publish(
+            "Bluetooth audio: radio disable result=$disabled " +
+                "connectionState=${BluetoothLinkPlan.stateName(connectionState(adapter))} " +
+                "reason=profiles-unavailable",
+        )
+        if (disabled) {
+            later.schedule({ worker.execute { watchRadio() } }, 3, TimeUnit.SECONDS)
+            later.schedule({ worker.execute { watchRadio() } }, 8, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun watchRadio() {
+        val context = appContext ?: return
+        if (!session || !radioOff(context)) return
+        val adapter = adapter(context) ?: return
+        val enabled = runCatching { adapter.isEnabled }.getOrNull()
+        if (enabled == true) {
+            val again = runCatching { adapter.disable() }.getOrDefault(false)
+            publish("Bluetooth audio: radio came back on; disable again result=$again")
+        } else {
+            publish("Bluetooth audio: radio stayed off")
+        }
+    }
+
+    private fun restoreRadio(context: Context) {
+        if (!radioOff(context)) return
+        val adapter = adapter(context) ?: run {
+            publish("Bluetooth audio: radio restore result=false reason=adapter-missing")
+            return
+        }
+        val enabled = runCatching { adapter.enable() }.getOrDefault(false)
+        if (enabled) {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (System.nanoTime() < deadline && runCatching { adapter.isEnabled }.getOrNull() != true) {
+                runCatching { Thread.sleep(100) }
+            }
+        }
+        val on = runCatching { adapter.isEnabled }.getOrNull() == true
+        if (on) clearRadio(context)
+        publish("Bluetooth audio: radio restore result=$enabled enabled=$on")
+    }
+
+    private fun adapter(context: Context): BluetoothAdapter? = runCatching {
+        context.getSystemService(BluetoothManager::class.java)?.adapter ?: BluetoothAdapter.getDefaultAdapter()
+    }.getOrNull()
+
+    private fun connectionState(adapter: BluetoothAdapter): Int? {
+        val method = adapter.javaClass.methods.firstOrNull { it.name == "getConnectionState" && it.parameterTypes.isEmpty() }
+            ?: return null
+        return runCatching { method.invoke(adapter) as? Int }.getOrNull()
+    }
+
+    private fun bluetoothService(adapter: BluetoothAdapter): Any? {
+        val method = adapter.javaClass.methods.firstOrNull {
+            (it.name == "getBluetoothService" || it.name == "getService") && it.parameterTypes.isEmpty()
+        }
+        if (method != null) return runCatching { method.invoke(adapter) }.getOrNull()
+        val field = adapter.javaClass.declaredFields.firstOrNull { it.name == "mService" } ?: return null
+        field.isAccessible = true
+        return runCatching { field.get(adapter) }.getOrNull()
+    }
+
+    private fun phoneDevice(adapter: BluetoothAdapter): BluetoothDevice? {
+        val address = phone
+        if (!address.isNullOrBlank()) {
+            val device = runCatching { adapter.getRemoteDevice(address) }.getOrNull()
+            if (device != null) return device
+        }
+        return runCatching { adapter.bondedDevices }.getOrNull()?.firstOrNull { connected(it) }
+    }
+
+    private fun connected(device: BluetoothDevice): Boolean {
+        val method = device.javaClass.methods.firstOrNull { it.name == "isConnected" && it.parameterTypes.isEmpty() }
+            ?: return false
+        return runCatching { method.invoke(device) as? Boolean }.getOrNull() == true
+    }
+
+    private fun logStacks(context: Context) {
+        if (stacksLogged) return
+        stacksLogged = true
+        val names = runCatching {
+            context.packageManager.getInstalledApplications(0).map { it.packageName }.filter { name ->
+                val normalized = name.lowercase()
+                normalized.contains("bluetooth") || normalized.startsWith("com.syu.") ||
+                    normalized.contains(".bt") || normalized.contains("nwd")
+            }.sorted().take(12)
+        }.getOrDefault(emptyList())
+        publish("Bluetooth audio: stacks=${if (names.isEmpty()) "none" else names.joinToString(",")}")
+    }
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun radioOff(context: Context) = prefs(context).getBoolean(KEY_RADIO, false)
+
+    private fun markRadio(context: Context) {
+        prefs(context).edit().putBoolean(KEY_RADIO, true).commit()
+    }
+
+    private fun clearRadio(context: Context) {
+        prefs(context).edit().remove(KEY_RADIO).commit()
     }
 
     private fun remember(context: Context, entries: List<BluetoothAudioPolicy.SavedPolicy>) {

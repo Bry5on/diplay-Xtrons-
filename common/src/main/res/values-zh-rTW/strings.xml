@@ -753,7 +753,7 @@
     <string name="phone_audio_route">CarPlay 通話使用車機電話音訊（實驗性）</string>
     <string name="phone_audio_route_description">CarPlay 通話期間保持一個 Telecom 通話，讓車機切換到電話音訊狀態並啟用內建的回音消除。這些通話中 DiPlay 自己的回音消除不會運作。你的聲音可能變大或失真。預設關閉，下一次通話生效。</string>
     <string name="settings_keep_audio_in_carplay">音訊留在 CarPlay（中斷藍牙音訊）（實驗性）</string>
-    <string name="settings_keep_audio_in_carplay_description">無線 CarPlay 透過藍牙啟動完成後，DiPlay 會中斷這台 iPhone 的免持和藍牙音樂設定檔。音樂、通話、Siri 和語音聊天都留在 CarPlay，麥克風由 DiPlay 擷取。藍牙只用於下一次無線連線的啟動。CarPlay 結束後這些原廠設定檔會恢復。如果車機不允許這項變更，DiPlay 會記下日誌並保持藍牙原樣。請關閉「車機電話音訊」，在部分車機上該模式會把音樂送到藍牙。在 XTRONS IX 上預設開啟，直到你更改；其他車機預設關閉。CarPlay 已連線時生效。</string>
+    <string name="settings_keep_audio_in_carplay_description">無線 CarPlay 透過藍牙啟動完成後，DiPlay 會中斷這台 iPhone 的免持和藍牙音樂設定檔。音樂、通話、Siri 和語音聊天都留在 CarPlay，麥克風由 DiPlay 擷取。藍牙只用於下一次無線連線的啟動。CarPlay 結束後這些原廠設定檔會恢復。如果車機隱藏這些設定檔，DiPlay 會在 CarPlay 結束前關閉藍牙，並在下次連線前重新開啟。如果無法關閉，DiPlay 會記下日誌並保持藍牙原樣。請關閉「車機電話音訊」，在部分車機上該模式會把音樂送到藍牙。在 XTRONS IX 上預設開啟，直到你更改；其他車機預設關閉。CarPlay 已連線時生效。</string>
     <string name="phone_audio_route_apps">其他應用程式的 VoIP 通話使用車機電話音訊（實驗性）</string>
     <string name="phone_audio_route_apps_description">當 WhatsApp、Telegram、Zoom 等其他應用程式處於語音或視訊通話時執行相同操作。語音訊息和一般錄音不受影響，因為車機在此狀態下會靜音一般麥克風。需要 DiPlay 保持執行，因此同時會開啟方向盤按鍵無障礙服務。預設關閉。</string>
     <string name="smooth_video">流暢影片（實驗性）</string>
