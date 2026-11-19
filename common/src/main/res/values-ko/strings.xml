@@ -796,6 +796,9 @@
     <string name="settings_head_unit_bluetooth_address_invalid">AA:BB:CC:DD:EE:FF 형식으로 입력하거나 비워 두세요.</string>
     <string name="settings_hold_bluetooth_during_calls">Siri와 통화 중 Bluetooth 끄기 유지 (실험 기능)</string>
     <string name="settings_hold_bluetooth_during_calls_description">Siri나 통화가 진행되는 동안 DiPlay가 Bluetooth를 끄고, 헤드유닛이 다시 켜면 또 끕니다. 통화가 CarPlay로 들릴 수 있습니다. 끝나면 Bluetooth가 돌아옵니다. 기본값은 꺼짐입니다. 아직 시작 중인 연결을 끊을 수 있습니다.</string>
+    <string name="settings_disconnect_handsfree">CarPlay 중 헤드유닛 핸즈프리 끊기 (실험 기능)</string>
+    <string name="settings_disconnect_handsfree_description">CarPlay가 연결된 동안 DiPlay는 이미 GOC 명령을 말하는 시리얼 단자로 핸즈프리 끊기를 보냅니다. 단자가 확인되기 전에는 보내지 않으며 모듈을 리셋하지 않습니다. 기본값은 꺼짐입니다.</string>
+    <string name="settings_restore_handsfree">헤드유닛 핸즈프리 복원</string>
     <string name="phone_audio_route_apps">다른 앱의 VoIP 통화에 차량 전화 오디오 사용 (실험 기능)</string>
     <string name="phone_audio_route_apps_description">WhatsApp, Telegram 또는 Zoom 같은 다른 앱에서 음성 또는 영상 통화를 할 때도 같은 기능을 수행합니다. 이 상태에서는 차량이 일반 마이크를 음소거하므로 음성 메모와 일반 녹음에는 적용하지 않습니다. DiPlay가 실행 중이어야 하므로 핸들 키 접근성 서비스도 켜집니다. 기본값은 꺼짐입니다.</string>
     <string name="smooth_video">부드러운 영상 (실험 기능)</string>

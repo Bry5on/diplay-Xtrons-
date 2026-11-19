@@ -762,6 +762,9 @@
     <string name="settings_head_unit_bluetooth_address_invalid">请输入 AA:BB:CC:DD:EE:FF 这样的地址，或留空。</string>
     <string name="settings_hold_bluetooth_during_calls">Siri 和通话期间保持蓝牙关闭（实验性）</string>
     <string name="settings_hold_bluetooth_during_calls_description">Siri 或通话进行时，DiPlay 会关闭蓝牙；如果车机又打开，会再次关闭。通话可能改从 CarPlay 播出。结束后蓝牙会恢复。默认关闭。可能中断仍在启动的连接。</string>
+    <string name="settings_disconnect_handsfree">CarPlay 期间断开车机免提（实验性）</string>
+    <string name="settings_disconnect_handsfree_description">CarPlay 已连接时，DiPlay 会向已经在说 GOC 命令的串口发送免提断开。在确认是哪个串口之前不会发送，也不会复位模块。默认关闭。</string>
+    <string name="settings_restore_handsfree">恢复车机免提</string>
     <string name="phone_audio_route_apps">其他应用的 VoIP 通话使用车机电话音频（实验性）</string>
     <string name="phone_audio_route_apps_description">当 WhatsApp、Telegram、Zoom 等其他应用处于语音或视频通话时执行同样操作。语音留言和普通录音不受影响，因为车机在此状态下会静音普通麦克风。需要 DiPlay 保持运行，因此同时会开启方向盘按键无障碍服务。默认关闭。</string>
     <string name="smooth_video">流畅视频（实验性）</string>

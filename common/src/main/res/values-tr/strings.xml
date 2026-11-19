@@ -765,6 +765,9 @@
     <string name="settings_head_unit_bluetooth_address_invalid">AA:BB:CC:DD:EE:FF biçiminde bir adres girin veya boş bırakın.</string>
     <string name="settings_hold_bluetooth_during_calls">Siri ve aramalar sırasında Bluetooth kapalı kalsın (deneysel)</string>
     <string name="settings_hold_bluetooth_during_calls_description">Siri veya bir arama sürerken DiPlay Bluetooth\'u kapatır ve ünite yeniden açarsa yine kapatır. Arama CarPlay üzerinden gelebilir. Bitince Bluetooth geri gelir. Varsayılan kapalıdır. Henüz başlamakta olan bir bağlantıyı kesebilir.</string>
+    <string name="settings_disconnect_handsfree">CarPlay sırasında ünitenin ahizesiz bağlantısını kes (deneysel)</string>
+    <string name="settings_disconnect_handsfree_description">CarPlay bağlıyken DiPlay, zaten GOC komutlarını konuşan seri bağlantıya ahizesiz kesme komutunu gönderir. Bağlantı belirlenene kadar göndermez ve modülü sıfırlamaz. Varsayılan kapalıdır.</string>
+    <string name="settings_restore_handsfree">Ünitenin ahizesiz bağlantısını geri yükle</string>
     <string name="phone_audio_route_apps">Diğer uygulamalardaki VoIP aramaları için araç telefon sesi (deneysel)</string>
     <string name="phone_audio_route_apps_description">WhatsApp, Telegram veya Zoom gibi başka bir uygulama sesli veya görüntülü aramadayken aynısını yapar. Sesli notlar ve düz kayıtlar kendi haline bırakılır çünkü araç bu durumda düz mikrofonu sessize alır. DiPlay\'in çalışmasını gerektirir, bu nedenle direksiyon tuşu erişilebilirlik hizmetini de açar. Varsayılan olarak kapalıdır.</string>
     <string name="smooth_video">Akıcı video (deneysel)</string>

@@ -121,6 +121,11 @@ object BluetoothAudioGate {
             this.wireless = wireless
             phone = phoneAddress?.trim()?.takeIf { it.isNotEmpty() }
             if (!wireless) bootstrapReleased = true
+            BluetoothModuleSerial.start(
+                BluetoothAudioPreference.disconnectHandsfree(app),
+                ::publish,
+            )
+            if (bootstrapReleased) BluetoothModuleSerial.allowCommands()
             drop()
         }
     }
@@ -132,6 +137,7 @@ object BluetoothAudioGate {
             appContext = app
             reportLog = log
             bootstrapReleased = true
+            BluetoothModuleSerial.allowCommands()
             drop()
         }
     }
@@ -146,6 +152,7 @@ object BluetoothAudioGate {
             appContext = app
             reportLog = log
             session = false
+            BluetoothModuleSerial.stop()
             restore()
         }
     }
@@ -217,6 +224,16 @@ object BluetoothAudioGate {
                     if (iosDeviceId == null) "unknown" else "carplay-phone",
             )
         }
+    }
+
+    fun setHandsfreeDisconnect(context: Context, enabled: Boolean) {
+        BluetoothAudioPreference.setDisconnectHandsfree(context, enabled)
+        BluetoothModuleSerial.setDisconnectWanted(enabled)
+        if (!enabled) BluetoothModuleSerial.restore(force = false)
+    }
+
+    fun restoreHandsfree() {
+        BluetoothModuleSerial.restore(force = true)
     }
 
     fun setEnabled(context: Context, enabled: Boolean) {

@@ -702,6 +702,9 @@
     <string name="settings_head_unit_bluetooth_address_invalid">Escribe una dirección como AA:BB:CC:DD:EE:FF, o déjala en blanco.</string>
     <string name="settings_hold_bluetooth_during_calls">Mantener el Bluetooth apagado durante Siri y las llamadas (experimental)</string>
     <string name="settings_hold_bluetooth_during_calls_description">Mientras Siri o una llamada están activos, DiPlay apaga el Bluetooth y lo vuelve a apagar si la unidad lo enciende. La llamada puede sonar por CarPlay. El Bluetooth vuelve al terminar. Desactivado por defecto. Puede interrumpir una conexión que aún se está iniciando.</string>
+    <string name="settings_disconnect_handsfree">Desconectar el manos libres de la unidad durante CarPlay (experimental)</string>
+    <string name="settings_disconnect_handsfree_description">Con CarPlay conectado, DiPlay envía la desconexión de manos libres en el puerto serie que ya habla el conjunto de órdenes GOC. No envía nada hasta identificar ese puerto y no reinicia el módulo. Desactivado por defecto.</string>
+    <string name="settings_restore_handsfree">Restaurar el manos libres de la unidad</string>
     <string name="phone_audio_route_apps">Audio telefónico del coche en llamadas VoIP de otras apps (experimental)</string>
     <string name="phone_audio_route_apps_description">Hace lo mismo mientras otra app, como WhatsApp, Telegram o Zoom, está en una llamada de voz o vídeo. Las notas de voz y las grabaciones normales no se tocan porque el coche silencia el micrófono normal en este estado. Requiere que DiPlay esté en ejecución, por lo que también activa el servicio de accesibilidad de las teclas del volante. Desactivado por defecto.</string>
     <string name="smooth_video">Vídeo fluido (experimental)</string>

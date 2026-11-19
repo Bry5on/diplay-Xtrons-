@@ -702,6 +702,9 @@
     <string name="settings_head_unit_bluetooth_address_invalid">أدخل عنوانًا مثل AA:BB:CC:DD:EE:FF، أو اتركه فارغًا.</string>
     <string name="settings_hold_bluetooth_during_calls">إبقاء البلوتوث متوقفًا أثناء Siri والمكالمات (تجريبي)</string>
     <string name="settings_hold_bluetooth_during_calls_description">أثناء Siri أو مكالمة، يطفئ DiPlay البلوتوث ويطفئه مجددًا إذا أعادت الوحدة تشغيله. قد تُسمع المكالمة عبر CarPlay. يعود البلوتوث عند الانتهاء. متوقف افتراضيًا. قد يقطع اتصالًا ما زال يبدأ.</string>
+    <string name="settings_disconnect_handsfree">قطع اتصال الحر اليدوي للوحدة أثناء CarPlay (تجريبي)</string>
+    <string name="settings_disconnect_handsfree_description">عند اتصال CarPlay، يرسل DiPlay أمر قطع الحر اليدوي على منفذ التسلسل الذي يتحدث أصلًا مجموعة أوامر GOC. لا يرسل قبل التعرف على المنفذ ولا يعيد ضبط الوحدة. متوقف افتراضيًا.</string>
+    <string name="settings_restore_handsfree">استعادة الحر اليدوي للوحدة</string>
     <string name="phone_audio_route_apps">صوت الهاتف في السيارة لمكالمات VoIP في التطبيقات الأخرى (تجريبي)</string>
     <string name="phone_audio_route_apps_description">يفعل الشيء نفسه أثناء مكالمة صوتية أو مرئية في تطبيق آخر مثل WhatsApp أو Telegram أو Zoom. لا تتأثر الرسائل الصوتية والتسجيلات العادية لأن السيارة تكتم الميكروفون العادي في هذا الوضع. يتطلب تشغيل DiPlay، لذا يفعّل أيضاً خدمة إمكانية الوصول لأزرار المقود. متوقف افتراضياً.</string>
     <string name="smooth_video">فيديو سلس (تجريبي)</string>

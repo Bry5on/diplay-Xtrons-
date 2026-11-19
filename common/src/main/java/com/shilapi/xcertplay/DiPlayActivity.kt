@@ -1996,6 +1996,14 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.holdRadioDuringCalls(this)) { on ->
                 com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.setHoldRadioDuringCalls(this, on)
             }
+            toggle(card, getString(R.string.settings_disconnect_handsfree),
+                getString(R.string.settings_disconnect_handsfree_description),
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.disconnectHandsfree(this)) { on ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.setHandsfreeDisconnect(this, on)
+            }
+            card.addView(button(getString(R.string.settings_restore_handsfree), false) {
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.restoreHandsfree()
+            }, matchButton(10, 60))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && CarHotspotSetup.isBydHeadUnit(this)) {
                 toggle(card, getString(R.string.settings_hide_byd_call_popup),
                     getString(R.string.settings_hide_byd_call_popup_description),
