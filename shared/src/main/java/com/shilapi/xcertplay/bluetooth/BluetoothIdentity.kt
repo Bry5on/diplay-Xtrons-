@@ -45,6 +45,6 @@ internal object BluetoothIdentity {
         return "Bluetooth identity: role=$role advertisedSource=$source " +
             "advertised=${token(advertised)} adapter=${token(adapter)} settings=${token(settings)} " +
             "wifi=${token(wifi)} adapterMatchesSettings=$settingsMatch " +
-            "iap2Name=blue airplayBluetoothIDs=same-as-iap2 vendorMac=not-exposed"
+            "iap2Transport=blue airplayBluetoothIDs=same-as-iap2 vendorMac=not-exposed"
     }
 }

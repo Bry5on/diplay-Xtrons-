@@ -13,10 +13,11 @@ class BluetoothLinkPlanTest {
         assertFalse(BluetoothLinkPlan.powerOffRadio(BluetoothLinkPlan.DISCONNECTED))
     }
 
-    @Test fun anUnreadableProfileDoesNotTurnTheRadioOff() {
+    @Test fun anUnreadableProfileGetsOneCycleInsteadOfStayingOff() {
         assertFalse(BluetoothLinkPlan.powerOffRadio(BluetoothLinkPlan.DISCONNECTED, profilesUnreadable = true))
         assertFalse(BluetoothLinkPlan.powerOffRadio(2, profilesUnreadable = true))
-        assertFalse(BluetoothLinkPlan.powerOffRadio(null, profilesUnreadable = true))
+        assertTrue(BluetoothLinkPlan.oneShotRadioCycle(profilesUnreadable = true))
+        assertFalse(BluetoothLinkPlan.oneShotRadioCycle(profilesUnreadable = false))
     }
 
     @Test fun stateNamesStayFreeOfAddresses() {

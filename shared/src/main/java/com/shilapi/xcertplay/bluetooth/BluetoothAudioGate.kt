@@ -63,6 +63,8 @@ object BluetoothAudioGate {
     private var stacksLogged = false
     private var carBtLogged = false
     private var vendorLogged = false
+    private var radioCycled = false
+    private var cycleWaiting = false
     private var receiverRegistered = false
     private var appContext: Context? = null
     private var reportLog: (String) -> Unit = {}
@@ -71,7 +73,7 @@ object BluetoothAudioGate {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == BluetoothAdapter.ACTION_STATE_CHANGED) {
                 val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
-                if (state == BluetoothAdapter.STATE_ON && holding) worker.execute { reclaimRadio() }
+                if (state == BluetoothAdapter.STATE_ON && holding) worker.execute { onRadioReturned() }
                 return
             }
             val state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED)
@@ -230,6 +232,8 @@ object BluetoothAudioGate {
                 stacksLogged = false
                 carBtLogged = false
                 vendorLogged = false
+                radioCycled = false
+                cycleWaiting = false
                 reconnects.set(0)
                 radioRestarts.set(0)
                 unregister(context)
@@ -253,6 +257,8 @@ object BluetoothAudioGate {
         stacksLogged = false
         carBtLogged = false
         vendorLogged = false
+        radioCycled = false
+        cycleWaiting = false
         reconnects.set(0)
         radioRestarts.set(0)
         unregister(context)
@@ -261,8 +267,8 @@ object BluetoothAudioGate {
 
     /**
      * Profile services did not change any link. Ask the adapter to disconnect the iPhone.
-     * When those services never answer, the Android radio is left on: this head unit switches it
-     * back on within a few seconds, and Siri and calls stay on the hands-free link.
+     * When those services never answer, turn the radio off once and let the head unit bring it
+     * back. A second off is not sent: that fight did not hold the hands-free link down.
      */
     private fun silenceRadio(context: Context, profilesUnreadable: Boolean) {
         logStacks(context)
@@ -282,9 +288,10 @@ object BluetoothAudioGate {
         val reflection = BluetoothLinkMethods.disconnect(bluetoothService(adapter), device)
         publish("Bluetooth audio: link drop method=reflection result=$reflection")
         if (profilesUnreadable) {
-            publish("Bluetooth audio: radio disable skipped reason=profiles-unavailable")
-            if (radioOff(context)) restoreRadio(context)
+            publish("Bluetooth audio: radio fight skipped reason=profiles-unavailable")
+            if (radioOff(context)) clearRadio(context)
             logVendorDisconnect(context, device)
+            oneShotRadioCycle(adapter)
             return
         }
         val after = connectionState(adapter)
@@ -304,6 +311,47 @@ object BluetoothAudioGate {
             later.schedule({ worker.execute { watchRadio() } }, 3, TimeUnit.SECONDS)
             later.schedule({ worker.execute { watchRadio() } }, 8, TimeUnit.SECONDS)
         }
+    }
+
+    private fun oneShotRadioCycle(adapter: BluetoothAdapter) {
+        if (!BluetoothLinkPlan.oneShotRadioCycle(profilesUnreadable = true)) return
+        if (radioCycled) {
+            publish("Bluetooth audio: radio cycle skipped reason=already-done")
+            return
+        }
+        radioCycled = true
+        val enabledNow = runCatching { adapter.isEnabled }.getOrNull() == true
+        val disabled = if (enabledNow) runCatching { adapter.disable() }.getOrDefault(false) else false
+        publish("Bluetooth audio: radio cycle off result=${if (enabledNow) disabled.toString() else "already-off"}")
+        if (!enabledNow || disabled) {
+            cycleWaiting = true
+            later.schedule({ worker.execute { finishRadioCycle() } }, 8, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun onRadioReturned() {
+        if (cycleWaiting) {
+            cycleWaiting = false
+            publish("Bluetooth audio: radio cycle back on")
+            publish("Bluetooth audio: radio cycle complete hfp-hold=unavailable")
+            return
+        }
+        reclaimRadio()
+    }
+
+    private fun finishRadioCycle() {
+        if (!cycleWaiting) return
+        cycleWaiting = false
+        val context = appContext
+        val adapter = context?.let { adapter(it) }
+        val on = adapter?.let { runCatching { it.isEnabled }.getOrNull() } == true
+        if (on) {
+            publish("Bluetooth audio: radio cycle back on")
+        } else {
+            val enabled = adapter?.let { runCatching { it.enable() }.getOrDefault(false) } ?: false
+            publish("Bluetooth audio: radio cycle restore result=$enabled")
+        }
+        publish("Bluetooth audio: radio cycle complete hfp-hold=unavailable")
     }
 
     private fun reclaimRadio() {
@@ -436,16 +484,18 @@ object BluetoothAudioGate {
                 permission.contains("BLUETOOTH") || permission.contains("CAR")
             }?.map { it.substringAfterLast('.') }?.take(6).orEmpty()
             val manifest = manifestBytes(info.applicationInfo?.sourceDir)
-            val actions = manifest?.let { BluetoothVendorManifest.interesting(pkg, it) }.orEmpty()
+            val parsed = manifest?.let { BluetoothVendorManifest.filters(it) }
+                ?: BluetoothVendorManifest.Filters(0, emptyList(), emptyList())
+            val actions = (parsed.receivers + parsed.services).distinct()
             val safe = BluetoothVendorManifest.safeDisconnect(actions)
             publish(
                 "Bluetooth audio: vendor pkg=$pkg manifest=${if (manifest == null) "unreadable" else "read"} " +
+                    "strings=${parsed.stringCount} " +
                     "providers=${providers.ifEmpty { listOf("none") }.joinToString("|")} " +
                     "permissions=${permissions.ifEmpty { listOf("none") }.joinToString("|")}",
             )
-            actions.chunked(4).forEach { chunk ->
-                publish("Bluetooth audio: vendor actions pkg=$pkg ${chunk.joinToString(",")}")
-            }
+            publishActions(pkg, "receivers", parsed.receivers)
+            publishActions(pkg, "services", parsed.services)
             publish(
                 "Bluetooth audio: vendor disconnect candidates=${safe.size} " +
                     (safe.take(4).joinToString(",") .ifEmpty { "none" }),
@@ -463,6 +513,16 @@ object BluetoothAudioGate {
                     )
                 }
             }
+        }
+    }
+
+    private fun publishActions(pkg: String, kind: String, actions: List<String>) {
+        if (actions.isEmpty()) {
+            publish("Bluetooth audio: vendor actions pkg=$pkg $kind=none")
+            return
+        }
+        actions.chunked(3).forEach { chunk ->
+            publish("Bluetooth audio: vendor actions pkg=$pkg $kind=${chunk.joinToString(",")}")
         }
     }
 

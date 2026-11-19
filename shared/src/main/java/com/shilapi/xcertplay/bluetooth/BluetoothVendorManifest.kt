@@ -19,6 +19,41 @@ internal object BluetoothVendorManifest {
                 )
         }.distinct().take(30)
 
+    data class Filters(val stringCount: Int, val receivers: List<String>, val services: List<String>)
+
+    /** Receiver and service intent-filter actions. An APK manifest starts with an XML chunk, not the string pool. */
+    fun filters(manifest: ByteArray): Filters {
+        val poolAt = findPool(manifest) ?: return Filters(0, emptyList(), emptyList())
+        val pool = readPool(manifest, poolAt)
+        if (manifest.size < 8 || u16(manifest, 0) != XML) return Filters(pool.size, emptyList(), emptyList())
+        val fileEnd = minOf(u32(manifest, 4).takeIf { it > 0 } ?: manifest.size, manifest.size)
+        var pos = u16(manifest, 2)
+        val stack = ArrayDeque<String>()
+        val receivers = mutableListOf<String>()
+        val services = mutableListOf<String>()
+        while (pos + 8 <= fileEnd) {
+            val type = u16(manifest, pos)
+            val headerSize = u16(manifest, pos + 2)
+            val size = u32(manifest, pos + 4)
+            if (size < 8 || pos + size > manifest.size) break
+            if (type == START) {
+                val name = elementName(manifest, pos, headerSize, pool)
+                stack.addLast(name)
+                if (name == "action") {
+                    val value = attribute(manifest, pos, headerSize, pool, "name")
+                    if (!value.isNullOrBlank()) {
+                        if (stack.contains("receiver")) receivers += value
+                        if (stack.contains("service")) services += value
+                    }
+                }
+            } else if (type == END && stack.isNotEmpty()) {
+                stack.removeLast()
+            }
+            pos += size
+        }
+        return Filters(pool.size, receivers.distinct(), services.distinct())
+    }
+
     /** A single clearly named profile disconnect. Unpair, reset, and ambiguous lists are refused. */
     fun safeDisconnect(actions: List<String>): List<String> =
         actions.map { it.trim() }.distinct().filter { action ->
@@ -29,21 +64,72 @@ internal object BluetoothVendorManifest {
         }
 
     fun strings(manifest: ByteArray): List<String> {
-        if (manifest.size < 28 || u16(manifest, 0) != 0x0001) return emptyList()
-        val headerSize = u16(manifest, 2)
-        if (headerSize < 28 || headerSize > manifest.size) return emptyList()
-        val stringCount = u32(manifest, 8)
+        val poolAt = findPool(manifest) ?: return emptyList()
+        return readPool(manifest, poolAt)
+    }
+
+    private const val POOL = 0x0001
+    private const val XML = 0x0003
+    private const val START = 0x0102
+    private const val END = 0x0103
+
+    private fun findPool(manifest: ByteArray): Int? {
+        if (manifest.size >= 28 && u16(manifest, 0) == POOL) return 0
+        if (manifest.size < 8 || u16(manifest, 0) != XML) return null
+        val header = u16(manifest, 2)
+        if (header + 8 <= manifest.size && u16(manifest, header) == POOL) return header
+        return null
+    }
+
+    private fun readPool(bytes: ByteArray, base: Int): List<String> {
+        if (base + 28 > bytes.size || u16(bytes, base) != POOL) return emptyList()
+        val headerSize = u16(bytes, base + 2)
+        if (headerSize < 28 || base + headerSize > bytes.size) return emptyList()
+        val stringCount = u32(bytes, base + 8)
         if (stringCount !in 0..20_000) return emptyList()
-        val utf8 = u32(manifest, 16) and 1 != 0
-        val stringsStart = u32(manifest, 20)
-        if (stringsStart !in 0 until manifest.size) return emptyList()
+        val utf8 = u32(bytes, base + 16) and 1 != 0
+        val stringsStart = u32(bytes, base + 20)
+        if (stringsStart < 0) return emptyList()
         return (0 until stringCount).mapNotNull { index ->
-            val table = headerSize + index * 4
-            if (table + 4 > manifest.size) return emptyList()
-            val at = stringsStart + u32(manifest, table)
-            if (at !in 0 until manifest.size) return@mapNotNull null
-            if (utf8) utf8(manifest, at) else utf16(manifest, at)
+            val table = base + headerSize + index * 4
+            if (table + 4 > bytes.size) return emptyList()
+            val at = base + stringsStart + u32(bytes, table)
+            if (at !in 0 until bytes.size) return@mapNotNull null
+            if (utf8) utf8(bytes, at) else utf16(bytes, at)
         }
+    }
+
+    private fun elementName(bytes: ByteArray, chunk: Int, headerSize: Int, pool: List<String>): String {
+        val ext = chunk + headerSize.coerceAtLeast(16)
+        if (ext + 8 > bytes.size) return ""
+        return pool.getOrNull(u32(bytes, ext + 4)).orEmpty()
+    }
+
+    private fun attribute(bytes: ByteArray, chunk: Int, headerSize: Int, pool: List<String>, want: String): String? {
+        val ext = chunk + headerSize.coerceAtLeast(16)
+        if (ext + 20 > bytes.size) return null
+        val attrStart = u16(bytes, ext + 8)
+        val attrSize = u16(bytes, ext + 10)
+        val attrCount = u16(bytes, ext + 12)
+        if (attrSize < 20 || attrCount !in 0..32) return null
+        var at = ext + attrStart
+        repeat(attrCount) {
+            if (at + 20 > bytes.size) return null
+            val name = pool.getOrNull(u32(bytes, at + 4)).orEmpty()
+            if (name == want || name.endsWith(":$want")) {
+                val raw = u32(bytes, at + 8)
+                val dataType = bytes[at + 15].toInt() and 0xff
+                val data = u32(bytes, at + 16)
+                val index = when {
+                    raw >= 0 -> raw
+                    dataType == 3 && data >= 0 -> data
+                    else -> -1
+                }
+                return pool.getOrNull(index)
+            }
+            at += attrSize
+        }
+        return null
     }
 
     private val DENY = Regex("(?i)unpair|remove|delete|reset|factory|bond|wipe|format")

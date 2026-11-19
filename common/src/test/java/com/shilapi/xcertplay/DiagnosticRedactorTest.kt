@@ -72,6 +72,14 @@ class DiagnosticRedactorTest {
             assertTrue(report.contains(video))
         } finally { folder.deleteRecursively() }
     }
+    @Test fun bluetoothIdentityDigestsSurviveAndANameFieldDoesNot() {
+        val line = "Bluetooth identity: role=sent advertisedSource=adapter advertised=abcd1234 " +
+            "adapter=abcd1234 settings=abcd1234 wifi=ffff0000 adapterMatchesSettings=yes " +
+            "iap2Transport=blue airplayBluetoothIDs=same-as-iap2 vendorMac=not-exposed"
+        assertEquals(line, DiagnosticRedactor.redact(line))
+        assertNull(DiagnosticRedactor.redact("Bluetooth identity: iap2Name=blue"))
+    }
+
     @Test fun payloadAndCredentialLinesNeverReachReports() {
         for (line in listOf("TRACE IAP2 tx key", "hotspot passphrase=secret", "token=secret", "certificate bytes=607", "rx body={phone: 'Jane'}", "ok\nsecret", "wifi ssid=Home", "wireless name=Jane Smith’s iPhone")) {
             assertNull(line, DiagnosticRedactor.redact(line))

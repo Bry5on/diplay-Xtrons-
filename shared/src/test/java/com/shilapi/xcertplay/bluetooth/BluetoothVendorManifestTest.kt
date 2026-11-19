@@ -21,7 +21,7 @@ class BluetoothIdentityTest {
         val line = BluetoothIdentity.line(adapter, adapter, adapter, "66:55:44:33:22:11", role = "sent")
         assertTrue(line.contains("advertisedSource=adapter"))
         assertTrue(line.contains("adapterMatchesSettings=yes"))
-        assertTrue(line.contains("iap2Name=blue"))
+        assertTrue(line.contains("iap2Transport=blue"))
         assertTrue(line.contains("vendorMac=not-exposed"))
         assertTrue(!line.contains(adapter))
         val other = BluetoothIdentity.line("99:88:77:66:55:44", adapter, adapter, null, role = "visible")
@@ -46,11 +46,72 @@ class BluetoothVendorManifestTest {
         assertEquals(2, BluetoothVendorManifest.safeDisconnect(actions).size)
     }
 
+    @Test fun aReceiverActionInsideTheXmlChunkIsListed() {
+        val action = "com.vendor.action.DISCONNECT_HFP"
+        val parsed = BluetoothVendorManifest.filters(xmlWithReceiver(action))
+        assertEquals(listOf(action), parsed.receivers)
+        assertTrue(parsed.stringCount > 0)
+        assertEquals(listOf(action), BluetoothVendorManifest.safeDisconnect(parsed.receivers))
+    }
+
     @Test fun theManifestStringPoolYieldsTheDisconnectAction() {
         val text = "com.vendor.action.DISCONNECT_HFP"
         val found = BluetoothVendorManifest.interesting("com.vendor", pool(text, "layout_main"))
         assertEquals(listOf(text), found)
         assertEquals(listOf(text), BluetoothVendorManifest.safeDisconnect(found))
+    }
+
+    private fun xmlWithReceiver(action: String): ByteArray {
+        val names = listOf("receiver", "intent-filter", "action", "name", action)
+        val pool = pool(*names.toTypedArray())
+        val body = ByteBuffer.allocate(pool.size + 256).order(ByteOrder.LITTLE_ENDIAN)
+        body.putShort(0x0003)
+        body.putShort(8)
+        body.putInt(0)
+        body.put(pool)
+        fun start(nameIndex: Int, attrName: Int = -1, attrValue: Int = -1) {
+            val count = if (attrName >= 0) 1 else 0
+            val size = 16 + 20 + count * 20
+            body.putShort(0x0102)
+            body.putShort(16)
+            body.putInt(size)
+            body.putInt(0)
+            body.putInt(-1)
+            body.putInt(-1)
+            body.putInt(nameIndex)
+            body.putShort(20)
+            body.putShort(20)
+            body.putShort(count.toShort())
+            body.putShort(0)
+            body.putShort(0)
+            body.putShort(0)
+            if (count == 1) {
+                body.putInt(-1)
+                body.putInt(attrName)
+                body.putInt(attrValue)
+                body.putShort(8)
+                body.put(0)
+                body.put(3)
+                body.putInt(attrValue)
+            }
+        }
+        fun end() {
+            body.putShort(0x0103)
+            body.putShort(16)
+            body.putInt(16)
+            body.putInt(0)
+            body.putInt(-1)
+        }
+        start(0)
+        start(1)
+        start(2, attrName = 3, attrValue = 4)
+        end(); end(); end()
+        val total = body.position()
+        body.putInt(4, total)
+        val out = ByteArray(total)
+        body.rewind()
+        body.get(out)
+        return out
     }
 
     private fun pool(vararg values: String): ByteArray {
@@ -78,6 +139,7 @@ class BluetoothVendorManifestTest {
             body.put(chars)
             body.putShort(0)
         }
+        body.putInt(4, body.position())
         val out = ByteArray(body.position())
         body.rewind()
         body.get(out)
