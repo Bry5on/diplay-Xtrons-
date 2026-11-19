@@ -1470,6 +1470,17 @@ class CarPlayController(
                 "wireless selected Bluetooth target name=${device.name ?: "unknown"} " +
                     "address=${device.address} localBt=$hostBluetoothMac",
             )
+            debugLog(
+                com.shilapi.xcertplay.bluetooth.BluetoothIdentity.line(
+                    advertised = hostBluetoothMac,
+                    adapter = runCatching { adapter.address }.getOrNull(),
+                    settings = runCatching {
+                        Settings.Secure.getString(appContext.contentResolver, "bluetooth_address")
+                    }.getOrNull(),
+                    wifi = com.shilapi.xcertplay.bluetooth.BluetoothIdentity.wifiAddress(),
+                    role = "sent",
+                ),
+            )
             val wirelessAirPlayConfig = airPlayConfig.copy(
                 deviceId = deviceIdentifier,
                 btMac = hostBluetoothMac,

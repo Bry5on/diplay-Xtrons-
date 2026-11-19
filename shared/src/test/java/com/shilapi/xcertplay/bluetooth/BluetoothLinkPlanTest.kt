@@ -13,13 +13,10 @@ class BluetoothLinkPlanTest {
         assertFalse(BluetoothLinkPlan.powerOffRadio(BluetoothLinkPlan.DISCONNECTED))
     }
 
-    @Test fun aDisconnectedReadingIsIgnoredWhenProfileServicesDidNotAnswer() {
-        assertTrue(
-            BluetoothLinkPlan.powerOffRadio(
-                BluetoothLinkPlan.DISCONNECTED,
-                profilesUnreadable = true,
-            ),
-        )
+    @Test fun anUnreadableProfileDoesNotTurnTheRadioOff() {
+        assertFalse(BluetoothLinkPlan.powerOffRadio(BluetoothLinkPlan.DISCONNECTED, profilesUnreadable = true))
+        assertFalse(BluetoothLinkPlan.powerOffRadio(2, profilesUnreadable = true))
+        assertFalse(BluetoothLinkPlan.powerOffRadio(null, profilesUnreadable = true))
     }
 
     @Test fun stateNamesStayFreeOfAddresses() {

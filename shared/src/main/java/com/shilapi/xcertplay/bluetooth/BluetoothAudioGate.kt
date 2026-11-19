@@ -62,6 +62,7 @@ object BluetoothAudioGate {
     private var holding = false
     private var stacksLogged = false
     private var carBtLogged = false
+    private var vendorLogged = false
     private var receiverRegistered = false
     private var appContext: Context? = null
     private var reportLog: (String) -> Unit = {}
@@ -228,6 +229,7 @@ object BluetoothAudioGate {
                 holding = false
                 stacksLogged = false
                 carBtLogged = false
+                vendorLogged = false
                 reconnects.set(0)
                 radioRestarts.set(0)
                 unregister(context)
@@ -250,6 +252,7 @@ object BluetoothAudioGate {
         holding = false
         stacksLogged = false
         carBtLogged = false
+        vendorLogged = false
         reconnects.set(0)
         radioRestarts.set(0)
         unregister(context)
@@ -257,14 +260,16 @@ object BluetoothAudioGate {
     }
 
     /**
-     * Profile services did not change any link. Ask the adapter to disconnect the iPhone, and if
-     * the link is still up (or the adapter will not say), turn the radio off until CarPlay ends.
+     * Profile services did not change any link. Ask the adapter to disconnect the iPhone.
+     * When those services never answer, the Android radio is left on: this head unit switches it
+     * back on within a few seconds, and Siri and calls stay on the hands-free link.
      */
     private fun silenceRadio(context: Context, profilesUnreadable: Boolean) {
         logStacks(context)
         logCarBluetooth(context)
+        logIdentity(context)
         val adapter = adapter(context) ?: run {
-            publish("Bluetooth audio: radio disable result=false reason=adapter-missing")
+            publish("Bluetooth audio: radio disable skipped reason=adapter-missing")
             return
         }
         val before = connectionState(adapter)
@@ -276,21 +281,24 @@ object BluetoothAudioGate {
         val device = phoneDevice(adapter)
         val reflection = BluetoothLinkMethods.disconnect(bluetoothService(adapter), device)
         publish("Bluetooth audio: link drop method=reflection result=$reflection")
+        if (profilesUnreadable) {
+            publish("Bluetooth audio: radio disable skipped reason=profiles-unavailable")
+            if (radioOff(context)) restoreRadio(context)
+            logVendorDisconnect(context, device)
+            return
+        }
         val after = connectionState(adapter)
-        if (!BluetoothLinkPlan.powerOffRadio(after, profilesUnreadable)) {
+        if (!BluetoothLinkPlan.powerOffRadio(after, profilesUnreadable = false)) {
             publish("Bluetooth audio: link dropped connectionState=disconnected")
             clearRadio(context)
             return
-        }
-        if (profilesUnreadable && after == BluetoothLinkPlan.DISCONNECTED) {
-            publish("Bluetooth audio: adapter state ignored reason=profiles-unavailable")
         }
         val disabled = runCatching { adapter.disable() }.getOrDefault(false)
         if (disabled) markRadio(context)
         publish(
             "Bluetooth audio: radio disable result=$disabled " +
                 "connectionState=${BluetoothLinkPlan.stateName(connectionState(adapter))} " +
-                "reason=profiles-unavailable",
+                "reason=link-still-up",
         )
         if (disabled) {
             later.schedule({ worker.execute { watchRadio() } }, 3, TimeUnit.SECONDS)
@@ -394,6 +402,96 @@ object BluetoothAudioGate {
             }.sorted().take(12)
         }.getOrDefault(emptyList())
         publish("Bluetooth audio: stacks=${if (names.isEmpty()) "none" else names.joinToString(",")}")
+    }
+
+    private fun logIdentity(context: Context) {
+        val radio = adapter(context)
+        val adapterAddress = radio?.let { runCatching { it.address }.getOrNull() }
+        val settings = runCatching {
+            android.provider.Settings.Secure.getString(context.contentResolver, "bluetooth_address")
+        }.getOrNull()
+        val advertised = listOf(adapterAddress, settings).firstOrNull { BluetoothIdentity.usable(it) }
+        publish(BluetoothIdentity.line(advertised, adapterAddress, settings, BluetoothIdentity.wifiAddress(), role = "visible"))
+    }
+
+    private fun logVendorDisconnect(context: Context, device: android.bluetooth.BluetoothDevice?) {
+        if (vendorLogged) return
+        vendorLogged = true
+        val enabled = BluetoothAudioPreference.enabled(context)
+        for (pkg in CAR_BT_PACKAGES) {
+            val info = runCatching {
+                context.packageManager.getPackageInfo(
+                    pkg,
+                    PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or
+                        PackageManager.GET_PROVIDERS or PackageManager.GET_PERMISSIONS,
+                )
+            }.getOrNull()
+            if (info == null) {
+                publish("Bluetooth audio: vendor pkg=$pkg manifest=missing")
+                continue
+            }
+            val providers = info.providers?.filter { it.exported }?.map { it.authority ?: it.name.substringAfterLast('.') }
+                ?.take(4).orEmpty()
+            val permissions = info.requestedPermissions?.filter { permission ->
+                permission.contains("BLUETOOTH") || permission.contains("CAR")
+            }?.map { it.substringAfterLast('.') }?.take(6).orEmpty()
+            val manifest = manifestBytes(info.applicationInfo?.sourceDir)
+            val actions = manifest?.let { BluetoothVendorManifest.interesting(pkg, it) }.orEmpty()
+            val safe = BluetoothVendorManifest.safeDisconnect(actions)
+            publish(
+                "Bluetooth audio: vendor pkg=$pkg manifest=${if (manifest == null) "unreadable" else "read"} " +
+                    "providers=${providers.ifEmpty { listOf("none") }.joinToString("|")} " +
+                    "permissions=${permissions.ifEmpty { listOf("none") }.joinToString("|")}",
+            )
+            actions.chunked(4).forEach { chunk ->
+                publish("Bluetooth audio: vendor actions pkg=$pkg ${chunk.joinToString(",")}")
+            }
+            publish(
+                "Bluetooth audio: vendor disconnect candidates=${safe.size} " +
+                    (safe.take(4).joinToString(",") .ifEmpty { "none" }),
+            )
+            when {
+                safe.size != 1 -> if (safe.size > 1) {
+                    publish("Bluetooth audio: vendor disconnect skipped reason=ambiguous")
+                }
+                !enabled -> publish("Bluetooth audio: vendor disconnect skipped reason=setting-off")
+                else -> {
+                    val result = sendVendorDisconnect(context, pkg, safe.single(), device)
+                    publish(
+                        "Bluetooth audio: vendor disconnect fired pkg=$pkg " +
+                            "action=${safe.single().substringAfterLast('.')} result=$result",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun sendVendorDisconnect(
+        context: Context,
+        pkg: String,
+        action: String,
+        device: android.bluetooth.BluetoothDevice?,
+    ): String = try {
+        context.sendBroadcast(
+            android.content.Intent(action).setPackage(pkg).apply {
+                if (device != null) putExtra(android.bluetooth.BluetoothDevice.EXTRA_DEVICE, device)
+            },
+        )
+        "sent"
+    } catch (error: SecurityException) {
+        "security"
+    } catch (error: RuntimeException) {
+        error.javaClass.simpleName
+    }
+
+    private fun manifestBytes(sourceDir: String?): ByteArray? {
+        if (sourceDir.isNullOrBlank()) return null
+        return runCatching {
+            java.util.zip.ZipFile(sourceDir).use { zip ->
+                val entry = zip.getEntry("AndroidManifest.xml") ?: return null
+                zip.getInputStream(entry).use { it.readBytes() }
+            }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
 
     /**
