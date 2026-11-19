@@ -1991,6 +1991,11 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.setEnabled(this, on)
             }
             headUnitBluetoothAddress(card)
+            toggle(card, getString(R.string.settings_hold_bluetooth_during_calls),
+                getString(R.string.settings_hold_bluetooth_during_calls_description),
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.holdRadioDuringCalls(this)) { on ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.setHoldRadioDuringCalls(this, on)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && CarHotspotSetup.isBydHeadUnit(this)) {
                 toggle(card, getString(R.string.settings_hide_byd_call_popup),
                     getString(R.string.settings_hide_byd_call_popup_description),

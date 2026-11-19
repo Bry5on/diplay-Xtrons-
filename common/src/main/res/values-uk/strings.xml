@@ -712,6 +712,8 @@
     <string name="settings_head_unit_bluetooth_address_description">Bluetooth-адреса цього головного пристрою у вигляді AA:BB:CC:DD:EE:FF. DiPlay повідомляє її iPhone, щоб дзвінки та Siri йшли через CarPlay, а не через гучний зв’язок пристрою. Залиште порожнім, щоб зберегти поточну адресу. Діє під час наступного з’єднання.</string>
     <string name="settings_head_unit_bluetooth_address_not_set">Не задано</string>
     <string name="settings_head_unit_bluetooth_address_invalid">Введіть адресу на зразок AA:BB:CC:DD:EE:FF або залиште поле порожнім.</string>
+    <string name="settings_hold_bluetooth_during_calls">Тримати Bluetooth вимкненим під час Siri і дзвінків (експериментально)</string>
+    <string name="settings_hold_bluetooth_during_calls_description">Поки триває Siri або дзвінок, DiPlay вимикає Bluetooth і вимикає його знову, якщо головний пристрій вмикає його. Дзвінок може йти через CarPlay. Bluetooth повертається після завершення. Типово вимкнено. Може перервати з’єднання, яке ще починається.</string>
     <string name="phone_audio_route_apps">Телефонний звук автомобіля для VoIP-дзвінків в інших застосунках (експериментально)</string>
     <string name="phone_audio_route_apps_description">Робить те саме, поки інший застосунок, наприклад WhatsApp, Telegram або Zoom, веде голосовий чи відеодзвінок. Голосові повідомлення та звичайні записи не чіпаються, бо в цьому режимі автомобіль вимикає звичайний мікрофон. Потрібен запущений DiPlay, тому також вмикається служба спеціальних можливостей для кнопок керма. За замовчуванням вимкнено.</string>
     <string name="smooth_video">Плавне відео (експериментально)</string>

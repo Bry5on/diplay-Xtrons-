@@ -799,6 +799,8 @@
     <string name="settings_head_unit_bluetooth_address_description">The Bluetooth address of this head unit, written as AA:BB:CC:DD:EE:FF. DiPlay gives this address to the iPhone so calls and Siri can use CarPlay instead of the head unit hands-free link. Leave it blank to keep the current address. Applies at the next connection.</string>
     <string name="settings_head_unit_bluetooth_address_not_set">Not set</string>
     <string name="settings_head_unit_bluetooth_address_invalid">Enter an address like AA:BB:CC:DD:EE:FF, or leave it blank.</string>
+    <string name="settings_hold_bluetooth_during_calls">Hold Bluetooth off during Siri and calls (experimental)</string>
+    <string name="settings_hold_bluetooth_during_calls_description">While Siri or a call is active, DiPlay turns Bluetooth off and turns it off again if the head unit switches it back on. The call can then play through CarPlay. Bluetooth comes back when they end. Off by default. Can interrupt a connection that is still starting.</string>
     <string name="phone_audio_route_apps">Car phone audio for VoIP calls in other apps (experimental)</string>
     <string name="phone_audio_route_apps_description">Does the same while another app, such as WhatsApp, Telegram or Zoom, is in a voice or video call. Voice notes and plain recordings are left alone because the car mutes the plain microphone in this state. Needs DiPlay running, so this also turns on the wheel-key accessibility service. Off by default.</string>
     <string name="smooth_video">Smooth video (experimental)</string>

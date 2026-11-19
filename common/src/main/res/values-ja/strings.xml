@@ -800,6 +800,8 @@
     <string name="settings_head_unit_bluetooth_address_description">この車載機のBluetoothアドレスを AA:BB:CC:DD:EE:FF の形で入力します。DiPlayがiPhoneに伝え、通話とSiriが車載機のハンズフリーではなくCarPlayを使うようにします。空欄のままにすると今のアドレスを使います。次の接続から反映されます。</string>
     <string name="settings_head_unit_bluetooth_address_not_set">未設定</string>
     <string name="settings_head_unit_bluetooth_address_invalid">AA:BB:CC:DD:EE:FF の形で入力するか、空欄のままにしてください。</string>
+    <string name="settings_hold_bluetooth_during_calls">Siriと通話中はBluetoothを切ったままにする（実験的機能）</string>
+    <string name="settings_hold_bluetooth_during_calls_description">Siriまたは通話のあいだ、DiPlayはBluetoothを切り、車載機が戻しても再度切ります。通話がCarPlayから聞こえることがあります。終わるとBluetoothは戻ります。初期状態ではオフです。起動中の接続を中断することがあります。</string>
     <string name="phone_audio_route_apps">他アプリのVoIP通話を車の電話音声で出力（実験的機能）</string>
     <string name="phone_audio_route_apps_description">WhatsApp、Telegram、Zoomなどの音声・ビデオ通話でも、車の電話音声モードを使用します。このモードでは車の通常マイクがミュートされるため、音声メモや通常の録音には適用しません。DiPlayの常時動作が必要なため、ステアリングスイッチ用のユーザー補助サービスも有効になります。初期状態ではオフです。</string>
     <string name="smooth_video">映像を滑らかにする（実験的機能）</string>

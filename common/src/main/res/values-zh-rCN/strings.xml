@@ -760,6 +760,8 @@
     <string name="settings_head_unit_bluetooth_address_description">这台车机的蓝牙地址，格式为 AA:BB:CC:DD:EE:FF。DiPlay 会把这个地址告诉 iPhone，让通话和 Siri 走 CarPlay，而不是车机的免提。留空则继续使用当前地址。下次连接时生效。</string>
     <string name="settings_head_unit_bluetooth_address_not_set">未设置</string>
     <string name="settings_head_unit_bluetooth_address_invalid">请输入 AA:BB:CC:DD:EE:FF 这样的地址，或留空。</string>
+    <string name="settings_hold_bluetooth_during_calls">Siri 和通话期间保持蓝牙关闭（实验性）</string>
+    <string name="settings_hold_bluetooth_during_calls_description">Siri 或通话进行时，DiPlay 会关闭蓝牙；如果车机又打开，会再次关闭。通话可能改从 CarPlay 播出。结束后蓝牙会恢复。默认关闭。可能中断仍在启动的连接。</string>
     <string name="phone_audio_route_apps">其他应用的 VoIP 通话使用车机电话音频（实验性）</string>
     <string name="phone_audio_route_apps_description">当 WhatsApp、Telegram、Zoom 等其他应用处于语音或视频通话时执行同样操作。语音留言和普通录音不受影响，因为车机在此状态下会静音普通麦克风。需要 DiPlay 保持运行，因此同时会开启方向盘按键无障碍服务。默认关闭。</string>
     <string name="smooth_video">流畅视频（实验性）</string>

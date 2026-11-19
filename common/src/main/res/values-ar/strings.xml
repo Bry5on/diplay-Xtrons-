@@ -700,6 +700,8 @@
     <string name="settings_head_unit_bluetooth_address_description">عنوان بلوتوث هذه الوحدة بالشكل AA:BB:CC:DD:EE:FF. يعطيه DiPlay للآيفون حتى تستخدم المكالمات وSiri كار بلاي بدل التحدث الحر في الوحدة. اتركه فارغًا للإبقاء على العنوان الحالي. يُطبَّق عند الاتصال التالي.</string>
     <string name="settings_head_unit_bluetooth_address_not_set">غير محدد</string>
     <string name="settings_head_unit_bluetooth_address_invalid">أدخل عنوانًا مثل AA:BB:CC:DD:EE:FF، أو اتركه فارغًا.</string>
+    <string name="settings_hold_bluetooth_during_calls">إبقاء البلوتوث متوقفًا أثناء Siri والمكالمات (تجريبي)</string>
+    <string name="settings_hold_bluetooth_during_calls_description">أثناء Siri أو مكالمة، يطفئ DiPlay البلوتوث ويطفئه مجددًا إذا أعادت الوحدة تشغيله. قد تُسمع المكالمة عبر CarPlay. يعود البلوتوث عند الانتهاء. متوقف افتراضيًا. قد يقطع اتصالًا ما زال يبدأ.</string>
     <string name="phone_audio_route_apps">صوت الهاتف في السيارة لمكالمات VoIP في التطبيقات الأخرى (تجريبي)</string>
     <string name="phone_audio_route_apps_description">يفعل الشيء نفسه أثناء مكالمة صوتية أو مرئية في تطبيق آخر مثل WhatsApp أو Telegram أو Zoom. لا تتأثر الرسائل الصوتية والتسجيلات العادية لأن السيارة تكتم الميكروفون العادي في هذا الوضع. يتطلب تشغيل DiPlay، لذا يفعّل أيضاً خدمة إمكانية الوصول لأزرار المقود. متوقف افتراضياً.</string>
     <string name="smooth_video">فيديو سلس (تجريبي)</string>

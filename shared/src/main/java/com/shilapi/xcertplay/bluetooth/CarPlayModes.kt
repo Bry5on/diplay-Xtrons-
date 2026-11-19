@@ -12,7 +12,7 @@ internal object CarPlayModes {
     const val SPEAKING = 1
     const val RECOGNIZING = 2
     const val RETURN_DEBOUNCE_MILLIS = 1_500L
-    const val RETURN_GAP_MILLIS = 30_000L
+    const val RETURN_GAP_MILLIS = 10_000L
 
     data class Update(val phoneCall: Boolean?, val speechMode: Int?)
 
@@ -47,6 +47,10 @@ internal object CarPlayModes {
         millisSinceLast in 0 until RETURN_GAP_MILLIS -> "recent"
         else -> null
     }
+
+    /** How long to wait when a return was skipped only because the last one was recent. */
+    fun deferReturnMillis(millisSinceLast: Long): Long? =
+        if (millisSinceLast in 0 until RETURN_GAP_MILLIS) RETURN_GAP_MILLIS - millisSinceLast else null
 
     private fun intValue(value: Any?): Int? = when (value) {
         is Boolean -> if (value) 1 else 0

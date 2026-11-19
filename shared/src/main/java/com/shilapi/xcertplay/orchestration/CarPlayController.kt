@@ -2867,6 +2867,10 @@ class CarPlayController(
      * a single byte is not tested at all.
      */
     private fun unrealBluetoothFailure(link: InstantBluetoothLink, trigger: String): WirelessStartupException? {
+        if (com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bluetoothLinkCheckSuspended()) {
+            connectionDiagnostic("Bluetooth link check skipped reason=radio-cycle")
+            return null
+        }
         val received = link.stream.bytesReceived
         if (!BluetoothLinkCheck.looksUnreal(link.connectMillis, received)) return null
         val started = System.nanoTime()
@@ -2927,6 +2931,10 @@ class CarPlayController(
         val failure = result.get() ?: return
         if (BluetoothLinkCheck.socketServiceMissing(failure)) {
             connectionDiagnostic("Bluetooth socket manager missing failureClass=${failure.javaClass.simpleName}")
+            if (com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bluetoothLinkCheckSuspended()) {
+                debugLog("Bluetooth socket failure during a radio cycle; not declaring Bluetooth unusable")
+                throw IOException("RFCOMM connect failed during a Bluetooth radio cycle", failure)
+            }
         }
         throw BluetoothLinkCheck.connectFailure(failure, address)
     }

@@ -19,6 +19,7 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Keeps factory Bluetooth audio off the CarPlay iPhone once wireless startup no longer needs it.
@@ -37,6 +38,7 @@ object BluetoothAudioGate {
     private const val PROXY_TIMEOUT_MILLIS = 2_000L
     private const val RESTORE_WAIT_MILLIS = 8_000L
     private const val MAX_RECONNECTS = 6
+    private const val LINK_CHECK_GRACE_SECONDS = 5L
     private val CAR_BT_PACKAGES = listOf("android.car.service.bt", "android.car.app.bt")
 
     private val worker = Executors.newSingleThreadExecutor { task ->
@@ -71,6 +73,9 @@ object BluetoothAudioGate {
     private var returnTask: ScheduledFuture<*>? = null
     private val modes = CarPlayModeTracker()
     private var lastModesLine = ""
+    private var callHold = false
+    private val callHoldRetries = AtomicInteger()
+    private val linkCheckQuietUntilNanos = AtomicLong()
     private var receiverRegistered = false
     private var appContext: Context? = null
     private var reportLog: (String) -> Unit = {}
@@ -154,6 +159,16 @@ object BluetoothAudioGate {
         }
     }
 
+    /**
+     * True while DiPlay has turned the radio off, and for a few seconds after it comes back.
+     * A connect in that window must not be reported as Bluetooth that can never work.
+     */
+    fun bluetoothLinkCheckSuspended(): Boolean {
+        if (cycleWaiting || callHold) return true
+        val until = linkCheckQuietUntilNanos.get()
+        return until > 0L && System.nanoTime() < until
+    }
+
     /** iOS reported phone-call or Siri state. A call that ends may cycle the radio once. */
     fun onModesChanged(params: Map<String, Any?>) {
         worker.execute {
@@ -165,8 +180,12 @@ object BluetoothAudioGate {
                 publish(line)
             }
             when (event) {
-                "started" -> returnTask?.cancel(false)
+                "started" -> {
+                    returnTask?.cancel(false)
+                    if (holdDuringCalls()) holdRadioForCall()
+                }
                 "ended" -> {
+                    callHold = false
                     returnTask?.cancel(false)
                     returnTask = later.schedule(
                         { worker.execute { returnMusicAfterCall() } },
@@ -278,6 +297,7 @@ object BluetoothAudioGate {
                 watchMediaUntil = 0L
                 returnTask?.cancel(false)
                 modes.reset()
+                callHold = false
                 lastModesLine = ""
                 reconnects.set(0)
                 radioRestarts.set(0)
@@ -308,6 +328,7 @@ object BluetoothAudioGate {
         watchMediaUntil = 0L
         returnTask?.cancel(false)
         modes.reset()
+        callHold = false
         lastModesLine = ""
         reconnects.set(0)
         radioRestarts.set(0)
@@ -382,6 +403,16 @@ object BluetoothAudioGate {
         val since = if (lastReturnCycleAt < 0) Long.MAX_VALUE
         else TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - lastReturnCycleAt)
         val skip = CarPlayModes.skipReturn(modes.busy, since, cycleWaiting)
+        if (skip == "recent") {
+            val wait = CarPlayModes.deferReturnMillis(since) ?: return
+            publish("Bluetooth audio: hfp-return deferred reason=recent waitMs=$wait")
+            returnTask = later.schedule(
+                { worker.execute { returnMusicAfterCall() } },
+                wait,
+                TimeUnit.MILLISECONDS,
+            )
+            return
+        }
         if (skip != null) {
             publish("Bluetooth audio: hfp-return skipped reason=$skip")
             return
@@ -418,19 +449,59 @@ object BluetoothAudioGate {
         }
     }
 
+    private fun holdDuringCalls(): Boolean {
+        val context = appContext ?: return false
+        return BluetoothAudioPreference.holdRadioDuringCalls(context) && returnCycleAllowed(context)
+    }
+
+    private fun holdRadioForCall() {
+        val context = appContext ?: return
+        val adapter = adapter(context) ?: return
+        callHold = true
+        cycleWaiting = false
+        callHoldRetries.set(0)
+        val disabled = runCatching { adapter.disable() }.getOrDefault(false)
+        publish("Bluetooth audio: call-hold off result=$disabled signal=modesChanged")
+    }
+
+    private fun quietLinkCheck() {
+        linkCheckQuietUntilNanos.set(System.nanoTime() + TimeUnit.SECONDS.toNanos(LINK_CHECK_GRACE_SECONDS))
+    }
+
     private fun onRadioReturned() {
+        if (callHold && modes.busy) {
+            val context = appContext ?: return
+            val adapter = adapter(context) ?: return
+            if (callHoldRetries.incrementAndGet() > MAX_RECONNECTS) {
+                callHold = false
+                quietLinkCheck()
+                publish("Bluetooth audio: call-hold stopped reason=head-unit-keeps-enabling")
+                return
+            }
+            val again = runCatching { adapter.disable() }.getOrDefault(false)
+            publish("Bluetooth audio: call-hold disable again result=$again")
+            return
+        }
         if (cycleWaiting) {
             cycleWaiting = false
+            quietLinkCheck()
             publish("Bluetooth audio: radio cycle back on")
             publish("Bluetooth audio: radio cycle complete hfp-hold=unavailable")
             return
         }
+        quietLinkCheck()
         reclaimRadio()
     }
 
     private fun finishRadioCycle() {
         if (!cycleWaiting) return
+        if (callHold && modes.busy) {
+            cycleWaiting = false
+            publish("Bluetooth audio: radio cycle paused reason=call-hold")
+            return
+        }
         cycleWaiting = false
+        quietLinkCheck()
         val context = appContext
         val adapter = context?.let { adapter(it) }
         val on = adapter?.let { runCatching { it.isEnabled }.getOrNull() } == true

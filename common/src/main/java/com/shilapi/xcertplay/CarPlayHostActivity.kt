@@ -174,6 +174,7 @@ open class CarPlayHostActivity : ComponentActivity() {
     private var startupRetryStopped = false
     private var startupRetryButton: View? = null
     private var startupFailureGeneration = -1
+    private var carPlayReachedThisRun = false
     private lateinit var airPlayIdentity: AirPlayIdentity
     private var languagePreferenceAtCreate = AppLocale.SYSTEM
     // The other CarPlay screen declaration opened in this one's place (CarPlayScreen).
@@ -5389,6 +5390,7 @@ open class CarPlayHostActivity : ComponentActivity() {
                         requestedSmallWindowForStream != smallWindowActive()) {
                         reconnectAfterLoss("Cluster small-window navi ${if (smallWindowActive()) "on" else "off"}")
                     }
+                    carPlayReachedThisRun = true
                     com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.onSessionActive(
                         this@CarPlayHostActivity,
                         wireless = wirelessEnabled,
@@ -6077,25 +6079,34 @@ open class CarPlayHostActivity : ComponentActivity() {
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
         if (reconnectScheduled) return
-        val startupDelay = if (startupFailure != null && startupFailure.retryable)
+        val suppressUnusable = startupFailure?.suppressedByRadioCycle(
+            sessionReached = carPlayReachedThisRun,
+            radioCycleSuspended = com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bluetoothLinkCheckSuspended(),
+        ) == true
+        val effectiveFailure = if (suppressUnusable) {
+            val why = if (carPlayReachedThisRun) "session-reached" else "radio-cycle"
+            appendLog("wireless startup Bluetooth-unusable suppressed reason=$why")
+            null
+        } else startupFailure
+        val startupDelay = if (effectiveFailure != null && effectiveFailure.retryable)
             startupRetryBudget.nextDelayMillis() else null
-        if (startupFailure != null && startupDelay == null) {
+        if (effectiveFailure != null && startupDelay == null) {
             startupRetryStopped = true
             startupRetryButton?.visibility = View.VISIBLE
             if (knownCause != null) {
                 setConnectionStage("${getString(ConnectionFailureGuidance.stage(knownCause))}\n" +
                     getString(R.string.wireless_startup_retries_exhausted))
-            } else if (startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
+            } else if (effectiveFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
                 // Its cause is in English, for the report; the help line below says what to check.
                 setConnectionStage("${getString(R.string.hotspot_network_not_ready)}\n" +
                     getString(R.string.wireless_startup_retries_exhausted))
-            } else if (!startupFailure.retryable) {
+            } else if (!effectiveFailure.retryable) {
                 setConnectionStage(reason, englishReason)
             } else {
                 setConnectionStage("$reason\n${getString(R.string.wireless_startup_retries_exhausted)}",
                     "$englishReason\n${englishResources.getString(R.string.wireless_startup_retries_exhausted)}")
             }
-            appendLog("wireless startup recovery stopped generation=$restartGeneration reason=$startupFailure retries=${startupRetryBudget.retries}")
+            appendLog("wireless startup recovery stopped generation=$restartGeneration reason=$effectiveFailure retries=${startupRetryBudget.retries}")
             return
         }
         reconnectScheduled = true

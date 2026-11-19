@@ -29,8 +29,10 @@ class CarPlayModesTest {
     @Test fun aReturnCycleWaitsUntilTheCallIsOverAndNotTooSoon() {
         assertEquals("call-active", CarPlayModes.skipReturn(busy = true, millisSinceLast = 60_000, cycleInProgress = false))
         assertEquals("in-progress", CarPlayModes.skipReturn(busy = false, millisSinceLast = 60_000, cycleInProgress = true))
-        assertEquals("recent", CarPlayModes.skipReturn(busy = false, millisSinceLast = 10_000, cycleInProgress = false))
-        assertNull(CarPlayModes.skipReturn(busy = false, millisSinceLast = 30_000, cycleInProgress = false))
+        assertEquals("recent", CarPlayModes.skipReturn(busy = false, millisSinceLast = 5_000, cycleInProgress = false))
+        assertEquals(5_000L, CarPlayModes.deferReturnMillis(5_000))
+        assertNull(CarPlayModes.deferReturnMillis(10_000))
+        assertNull(CarPlayModes.skipReturn(busy = false, millisSinceLast = 10_000, cycleInProgress = false))
         assertEquals(1_500L, CarPlayModes.RETURN_DEBOUNCE_MILLIS)
     }
 

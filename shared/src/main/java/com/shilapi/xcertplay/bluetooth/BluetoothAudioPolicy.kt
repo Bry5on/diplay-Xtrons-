@@ -50,6 +50,7 @@ object BluetoothAudioPreference {
     private const val PREFS = "diplay_bluetooth_audio"
     private const val KEY = "keep_in_carplay"
     private const val KEY_ADDRESS = "head_unit_bluetooth_address"
+    private const val KEY_HOLD = "hold_radio_during_calls"
 
     fun enabled(stored: Boolean?, xtronsIx: Boolean): Boolean = stored ?: xtronsIx
 
@@ -79,6 +80,13 @@ object BluetoothAudioPreference {
         val text = raw.trim().uppercase()
         if (text.isEmpty()) return ""
         return text.takeIf { BluetoothIdentity.usable(it) }
+    }
+
+    fun holdRadioDuringCalls(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_HOLD, false)
+
+    fun setHoldRadioDuringCalls(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_HOLD, enabled).commit()
     }
 
     fun setManualAddress(context: Context, raw: String?) {

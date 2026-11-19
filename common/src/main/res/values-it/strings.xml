@@ -777,6 +777,8 @@
     <string name="settings_head_unit_bluetooth_address_description">L’indirizzo Bluetooth di questa unità, scritto come AA:BB:CC:DD:EE:FF. DiPlay lo comunica all’iPhone così chiamate e Siri usano CarPlay invece del vivavoce dell’unità. Lascialo vuoto per mantenere l’indirizzo attuale. Si applica alla connessione successiva.</string>
     <string name="settings_head_unit_bluetooth_address_not_set">Non impostato</string>
     <string name="settings_head_unit_bluetooth_address_invalid">Inserisci un indirizzo come AA:BB:CC:DD:EE:FF, oppure lascialo vuoto.</string>
+    <string name="settings_hold_bluetooth_during_calls">Tieni il Bluetooth spento durante Siri e le chiamate (sperimentale)</string>
+    <string name="settings_hold_bluetooth_during_calls_description">Mentre Siri o una chiamata sono attivi, DiPlay spegne il Bluetooth e lo spegne di nuovo se l’unità lo riaccende. La chiamata può arrivare da CarPlay. Il Bluetooth torna alla fine. Disattivo per impostazione predefinita. Può interrompere una connessione ancora in avvio.</string>
     <string name="phone_audio_route_apps">Audio telefono dell’auto per chiamate VoIP in altre app (sperimentale)</string>
     <string name="phone_audio_route_apps_description">Fa lo stesso mentre un’altra app, come WhatsApp, Telegram o Zoom, è in una chiamata vocale o video. Le note vocali e le registrazioni semplici vengono lasciate stare perché in questo stato l’auto silenzia il microfono semplice. Richiede DiPlay in esecuzione, quindi attiva anche il servizio di accessibilità dei tasti del volante. Disattivato per impostazione predefinita.</string>
     <string name="smooth_video">Video fluido (sperimentale)</string>

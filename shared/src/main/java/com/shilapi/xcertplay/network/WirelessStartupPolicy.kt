@@ -31,6 +31,13 @@ enum class WirelessStartupFailure {
     /** False when no further attempt can change what went wrong. */
     val retryable: Boolean get() = this != HOTSPOT_CONFIGURATION && this != BLUETOOTH_UNUSABLE &&
         this != WIFI_DIRECT_BESIDE_HOTSPOT
+
+    /**
+     * A radio cycle DiPlay itself started makes the next connect look like Bluetooth can never
+     * work. That verdict is also wrong after a session has already come up in this run.
+     */
+    fun suppressedByRadioCycle(sessionReached: Boolean, radioCycleSuspended: Boolean): Boolean =
+        this == BLUETOOTH_UNUSABLE && (sessionReached || radioCycleSuspended)
 }
 
 class WirelessStartupException(
