@@ -80,6 +80,10 @@ class DiagnosticRedactorTest {
         val probes = "Bluetooth identity: probes adapter=unusable secure=absent sysfs=3f46b40a chosen=sysfs localBit=clear"
         assertEquals(probes, DiagnosticRedactor.redact(probes))
         assertNull(DiagnosticRedactor.redact("Bluetooth identity: iap2Name=blue"))
+        val module = "Bluetooth module: uart node=ttyS0 exists=true readable=false writable=true"
+        assertEquals(module, DiagnosticRedactor.redact(module))
+        val property = "Bluetooth module: property key=persist.bluetooth.hfp value=off"
+        assertEquals(property, DiagnosticRedactor.redact(property))
     }
 
     @Test fun payloadAndCredentialLinesNeverReachReports() {

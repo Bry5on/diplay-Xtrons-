@@ -66,6 +66,7 @@ object BluetoothAudioGate {
     private var stacksLogged = false
     private var carBtLogged = false
     private var vendorLogged = false
+    private var moduleLogged = false
     private var radioCycled = false
     private var cycleWaiting = false
     private var lastReturnCycleAt = -1L
@@ -249,6 +250,7 @@ object BluetoothAudioGate {
         if (prefs(context).getBoolean(KEY_PROFILES, false)) {
             holding = true
             register(context)
+            logModule(context)
             publish("Bluetooth audio: profile services skipped reason=unavailable-last-session")
             silenceRadio(context, profilesUnreadable = true)
             return
@@ -269,6 +271,7 @@ object BluetoothAudioGate {
         if (remember) remember(context, saved)
         holding = true
         register(context)
+        logModule(context)
         FactoryBluetoothSnapshot.log(context, reportLog)
         publish("Bluetooth audio: drop requested holding=true remembered=${saved.size}")
         if (saved.isEmpty() && profilesUnreadable) {
@@ -291,6 +294,7 @@ object BluetoothAudioGate {
                 stacksLogged = false
                 carBtLogged = false
                 vendorLogged = false
+                moduleLogged = false
                 radioCycled = false
                 cycleWaiting = false
                 lastReturnCycleAt = -1L
@@ -322,6 +326,7 @@ object BluetoothAudioGate {
         stacksLogged = false
         carBtLogged = false
         vendorLogged = false
+        moduleLogged = false
         radioCycled = false
         cycleWaiting = false
         lastReturnCycleAt = -1L
@@ -597,6 +602,16 @@ object BluetoothAudioGate {
         val method = device.javaClass.methods.firstOrNull { it.name == "isConnected" && it.parameterTypes.isEmpty() }
             ?: return false
         return runCatching { method.invoke(device) as? Boolean }.getOrNull() == true
+    }
+
+    /**
+     * Read-only look at the hands-free module. Device nodes are only stat'd. Nothing is opened
+     * for reading or writing, and no broadcast or setting is sent.
+     */
+    private fun logModule(context: Context) {
+        if (moduleLogged) return
+        moduleLogged = true
+        BluetoothModuleScan.lines(context).forEach { publish(it) }
     }
 
     private fun logStacks(context: Context) {
