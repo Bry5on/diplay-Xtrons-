@@ -390,6 +390,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         // before showing anything, so the cluster is not left on DiPlay's last frame.
         GeelyClusterProjection.releaseStale(applicationContext)
         PhoneAudioRoute.attach(applicationContext)
+        com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.recoverAbandoned(applicationContext)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= 28) {
             window.attributes = window.attributes.apply {
@@ -1984,6 +1985,11 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         // Opt-in controls that can cost sound or video on some head units.
         filteredSection(content, SettingsSection.ADVANCED_MEDIA,
             getString(R.string.settings_advanced_media), R.drawable.ic_dp_advanced) { card ->
+            toggle(card, getString(R.string.settings_keep_audio_in_carplay),
+                getString(R.string.settings_keep_audio_in_carplay_description),
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.enabled(this)) { on ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.setEnabled(this, on)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && CarHotspotSetup.isBydHeadUnit(this)) {
                 toggle(card, getString(R.string.settings_hide_byd_call_popup),
                     getString(R.string.settings_hide_byd_call_popup_description),
@@ -5994,6 +6000,9 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         appendLine("Head-unit board: ${Build.BOARD}; hardware: ${Build.HARDWARE}; build: ${Build.DISPLAY}")
         appendLine()
         appendLine(BluetoothDiagnosticSnapshot.report(appContext))
+        appendLine("--- Bluetooth audio profiles ---")
+        appendLine(com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.report(appContext))
+        appendLine(com.shilapi.xcertplay.bluetooth.FactoryBluetoothSnapshot.latest)
         appendLine()
         appendLine("--- Current cluster display diagnostics (even when disabled) ---")
         appendLine(ClusterMapPresentation.diagnosticReport(appContext))

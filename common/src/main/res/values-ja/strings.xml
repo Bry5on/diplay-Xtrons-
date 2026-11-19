@@ -794,6 +794,8 @@
     <string name="call_voice_filter_description">CarPlayの通話音声の低音を抑えます。声の聞こえ方が変わる場合があります。次回接続から有効です。</string>
     <string name="phone_audio_route">CarPlay通話を車の電話音声で出力（実験的機能）</string>
     <string name="phone_audio_route_description">CarPlay通話中にTelecom通話を維持し、車を電話音声モードに切り替えて車側のエコーキャンセルを使います。この通話ではDiPlay側のエコーキャンセルを使いません。声が大きくなったり、ひずんだりする場合があります。初期状態ではオフです。次の通話から反映されます。</string>
+    <string name="settings_keep_audio_in_carplay">音声をCarPlayに残す（Bluetooth音声を切断）（実験的機能）</string>
+    <string name="settings_keep_audio_in_carplay_description">ワイヤレスCarPlayがBluetoothでの起動を終えたあと、DiPlayはこのiPhoneのハンズフリーとBluetooth音楽のプロファイルを切断します。音楽、通話、Siri、音声チャットはCarPlayに残り、マイクはDiPlayが使います。Bluetoothは次のワイヤレス接続の開始にだけ使います。CarPlayが終わると純正プロファイルは戻ります。車載機が変更を許可しない場合、DiPlayはログに残してBluetoothはそのままにします。車の電話音声はオフのままにしてください。一部の車載機ではそのモードが音楽をBluetoothへ送ります。XTRONS IXでは変更するまでオン、それ以外ではオフです。CarPlayの接続中に反映されます。</string>
     <string name="phone_audio_route_apps">他アプリのVoIP通話を車の電話音声で出力（実験的機能）</string>
     <string name="phone_audio_route_apps_description">WhatsApp、Telegram、Zoomなどの音声・ビデオ通話でも、車の電話音声モードを使用します。このモードでは車の通常マイクがミュートされるため、音声メモや通常の録音には適用しません。DiPlayの常時動作が必要なため、ステアリングスイッチ用のユーザー補助サービスも有効になります。初期状態ではオフです。</string>
     <string name="smooth_video">映像を滑らかにする（実験的機能）</string>
