@@ -101,12 +101,29 @@ class WirelessHandoffTest {
     }
 
     @Test
-    fun tcpAcceptedWithoutSessionSetupStillFailsBringUp() {
+    fun tcpAcceptedAfterStartSessionKeepsTheTunnelUntilSetup() {
         val handshake = WirelessAirPlayHandshake()
         handshake.begin(1)
         handshake.noteStartSession(1)
         handshake.noteTcpAccepted(1)
         assertFalse(handshake.reachedSessionSetup(1))
+        assertTrue(handshake.reachedPhoneTcp(1))
+        assertTrue(
+            isRfcommEofAfterAirPlaySession(
+                IOException("iAP2 link ended"),
+                sessionActive = false,
+                frameRendered = false,
+                phoneTcpReached = handshake.reachedPhoneTcp(1),
+            ),
+        )
+    }
+
+    @Test
+    fun tcpBeforeStartSessionDoesNotKeepTheTunnel() {
+        val handshake = WirelessAirPlayHandshake()
+        handshake.begin(1)
+        handshake.noteTcpAccepted(1)
+        assertFalse(handshake.reachedPhoneTcp(1))
         assertFalse(eofKept(handshake, 1))
     }
 

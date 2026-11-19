@@ -158,18 +158,20 @@ internal fun isWirelessHandoffInProgress(
  * A clean Bluetooth EOF is [Iap2LinkEngine.feedEof], which dies with no reason. The link
  * pump then throws [IOException] "iAP2 link ended", so [Iap2WirelessControlClient.run]
  * never returns [Iap2WirelessControlTerminal.CHANNEL_CLOSED]. Once an AirPlay session is
- * up, a frame has rendered, or this generation has sent CarPlayStartSession and received the
- * phone's session SETUP (deviceID) on an accepted AirPlay control connection. Before any of
- * those, the bring-up failure path still runs. A SETUP-only keep-alive is provisional: the
- * caller must fail the generation if no session arrives.
+ * up, a frame has rendered, this generation has received the phone's session SETUP, or this
+ * generation has sent CarPlayStartSession and accepted the phone's TCP connection. The iPhone
+ * often closes RFCOMM in the few milliseconds before SETUP is parsed. Before any of those, the
+ * bring-up failure path still runs. A keep-alive that is still waiting for the session is
+ * provisional: the caller must fail the generation if no session arrives.
  */
 internal fun isRfcommEofAfterAirPlaySession(
     error: Throwable,
     sessionActive: Boolean,
     frameRendered: Boolean,
     airPlaySetupReached: Boolean = false,
+    phoneTcpReached: Boolean = false,
 ): Boolean =
-    (sessionActive || frameRendered || airPlaySetupReached) &&
+    (sessionActive || frameRendered || airPlaySetupReached || phoneTcpReached) &&
         error is IOException &&
         error.message?.contains("iAP2 link ended") == true
 
@@ -1703,6 +1705,7 @@ class CarPlayController(
             val sessionActive = activeSession != null
             val frameRendered = wirelessConnectionProof.hasRenderedFrame(generation)
             val airPlaySetupReached = wirelessAirPlayHandshake.reachedSessionSetup(generation)
+            val phoneTcpReached = wirelessAirPlayHandshake.reachedPhoneTcp(generation)
             if (
                 !wirelessActiveReported.get() &&
                 isRfcommEofAfterAirPlaySession(
@@ -1710,6 +1713,7 @@ class CarPlayController(
                     sessionActive = sessionActive,
                     frameRendered = frameRendered,
                     airPlaySetupReached = airPlaySetupReached,
+                    phoneTcpReached = phoneTcpReached,
                 )
             ) {
                 if (sessionActive || frameRendered) {
@@ -1717,10 +1721,16 @@ class CarPlayController(
                         "wireless RFCOMM ended after AirPlay session started; " +
                             "keeping the Wi-Fi AirPlay tunnel alive",
                     )
-                } else {
+                } else if (airPlaySetupReached) {
                     debugLog(
                         "wireless RFCOMM ended after AirPlay SETUP; " +
                             "keeping the Wi-Fi AirPlay tunnel alive pending session",
+                    )
+                    armSetupKeepAlive(generation)
+                } else {
+                    debugLog(
+                        "wireless RFCOMM ended after the phone's AirPlay TCP; " +
+                            "keeping the Wi-Fi AirPlay tunnel alive pending SETUP",
                     )
                     armSetupKeepAlive(generation)
                 }
