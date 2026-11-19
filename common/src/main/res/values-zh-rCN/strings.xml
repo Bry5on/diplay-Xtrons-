@@ -756,6 +756,10 @@
     <string name="phone_audio_route_description">CarPlay 通话期间保持一个 Telecom 通话，使车机切换到电话音频状态并启用自带的回声消除。这些通话中 DiPlay 自己的回声消除不会工作。你的声音可能变大或失真。默认关闭，下一次通话生效。</string>
     <string name="settings_keep_audio_in_carplay">音频留在 CarPlay（断开蓝牙音频）（实验性）</string>
     <string name="settings_keep_audio_in_carplay_description">无线 CarPlay 通过蓝牙启动完成后，DiPlay 会断开这台 iPhone 的免提和蓝牙音乐配置。音乐、通话、Siri 和语音聊天都留在 CarPlay，麦克风由 DiPlay 采集。蓝牙只用于下一次无线连接的启动。CarPlay 结束后这些原厂配置会恢复。如果车机隐藏这些配置，DiPlay 会在 CarPlay 结束前关闭蓝牙，并在下次连接前重新打开。如果无法关闭，DiPlay 会记下日志并保持蓝牙原样。请关闭“车机电话音频”，在部分车机上该模式会把音乐送到蓝牙。在 XTRONS IX 上默认开启，直到你更改；其他车机默认关闭。CarPlay 已连接时生效。</string>
+    <string name="settings_head_unit_bluetooth_address">车机蓝牙地址（实验性）</string>
+    <string name="settings_head_unit_bluetooth_address_description">这台车机的蓝牙地址，格式为 AA:BB:CC:DD:EE:FF。DiPlay 会把这个地址告诉 iPhone，让通话和 Siri 走 CarPlay，而不是车机的免提。留空则继续使用当前地址。下次连接时生效。</string>
+    <string name="settings_head_unit_bluetooth_address_not_set">未设置</string>
+    <string name="settings_head_unit_bluetooth_address_invalid">请输入 AA:BB:CC:DD:EE:FF 这样的地址，或留空。</string>
     <string name="phone_audio_route_apps">其他应用的 VoIP 通话使用车机电话音频（实验性）</string>
     <string name="phone_audio_route_apps_description">当 WhatsApp、Telegram、Zoom 等其他应用处于语音或视频通话时执行同样操作。语音留言和普通录音不受影响，因为车机在此状态下会静音普通麦克风。需要 DiPlay 保持运行，因此同时会开启方向盘按键无障碍服务。默认关闭。</string>
     <string name="smooth_video">流畅视频（实验性）</string>

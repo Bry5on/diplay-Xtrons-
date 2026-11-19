@@ -49,6 +49,7 @@ internal object BluetoothAudioPolicy {
 object BluetoothAudioPreference {
     private const val PREFS = "diplay_bluetooth_audio"
     private const val KEY = "keep_in_carplay"
+    private const val KEY_ADDRESS = "head_unit_bluetooth_address"
 
     fun enabled(stored: Boolean?, xtronsIx: Boolean): Boolean = stored ?: xtronsIx
 
@@ -66,5 +67,24 @@ object BluetoothAudioPreference {
 
     fun setEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, enabled).commit()
+    }
+
+    fun manualAddress(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_ADDRESS, null)
+            ?.takeIf { BluetoothIdentity.usable(it) }
+
+    /** Empty text clears the saved address. Anything else must be AA:BB:CC:DD:EE:FF. */
+    fun normalizeManualAddress(raw: String): String? {
+        val text = raw.trim().uppercase()
+        if (text.isEmpty()) return ""
+        return text.takeIf { BluetoothIdentity.usable(it) }
+    }
+
+    fun setManualAddress(context: Context, raw: String?) {
+        val normalized = raw?.let { normalizeManualAddress(it) } ?: return
+        val edit = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        if (normalized.isEmpty()) edit.remove(KEY_ADDRESS) else edit.putString(KEY_ADDRESS, normalized)
+        edit.commit()
     }
 }

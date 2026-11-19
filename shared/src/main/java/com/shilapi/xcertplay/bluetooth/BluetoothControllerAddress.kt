@@ -21,6 +21,7 @@ internal object BluetoothControllerAddress {
 
     fun read(context: Context, adapterAddress: String?, synthetic: String): Found {
         val readings = mutableListOf(
+            "manual" to BluetoothAudioPreference.manualAddress(context),
             "adapter" to adapterAddress,
             "secure" to text { Settings.Secure.getString(context.contentResolver, "bluetooth_address") },
             "global" to text { Settings.Global.getString(context.contentResolver, "bluetooth_address") },

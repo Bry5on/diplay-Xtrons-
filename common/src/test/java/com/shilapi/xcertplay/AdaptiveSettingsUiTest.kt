@@ -775,6 +775,8 @@ class AdaptiveSettingsUiTest {
         assertTrue(text(R.string.settings_navigation_wheel_volume) in advanced)
         assertFalse(text(R.string.settings_navigation_wheel_volume) in audio)
         assertFalse(text(R.string.settings_navigation_wheel_volume) in vehicle)
+        assertTrue(advanced.any { it.startsWith(text(R.string.settings_head_unit_bluetooth_address)) })
+        assertFalse(audio.any { it.startsWith(text(R.string.settings_head_unit_bluetooth_address)) })
         assertTrue(text(R.string.settings_ambient_title) in advanced)
         assertFalse(text(R.string.settings_ambient_title) in audio)
         assertFalse(text(R.string.settings_ambient_title) in vehicle)

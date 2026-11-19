@@ -51,6 +51,20 @@ class BluetoothControllerAddressTest {
         assertTrue(!found.probes.contains(radio))
     }
 
+    @Test fun aSavedAddressIsUsedBeforeAnyProbe() {
+        val typed = "04:11:22:33:44:55"
+        val found = BluetoothControllerAddress.select(
+            listOf("manual" to typed, "sysfs" to "04:AA:BB:CC:DD:EE"),
+            "02:11:22:33:44:55",
+        )
+        assertEquals(typed, found.address)
+        assertEquals("manual", found.chosen)
+        assertEquals("clear", found.localBit)
+        assertEquals("", com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.normalizeManualAddress("  "))
+        assertEquals(typed, com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.normalizeManualAddress("04:11:22:33:44:55"))
+        assertEquals(null, com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.normalizeManualAddress("not-a-mac"))
+    }
+
     @Test fun theIdentityHashIsUsedOnlyWhenNoControllerAddressIsReadable() {
         val synthetic = "02:11:22:33:44:55"
         val found = BluetoothControllerAddress.select(

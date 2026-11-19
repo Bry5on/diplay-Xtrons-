@@ -790,6 +790,10 @@
     <string name="phone_audio_route_description">CarPlay 통화 중 Telecom 통화를 유지하여 차량이 전화 오디오 상태로 전환되고 자체 에코 제거 기능을 사용하도록 합니다. 이 통화에는 DiPlay의 에코 제거가 적용되지 않습니다. 내 목소리가 더 크게 들리거나 왜곡될 수 있습니다. 기본값은 꺼짐이며 다음 통화부터 적용됩니다.</string>
     <string name="settings_keep_audio_in_carplay">오디오를 CarPlay에 유지 (Bluetooth 오디오 끊기) (실험 기능)</string>
     <string name="settings_keep_audio_in_carplay_description">무선 CarPlay가 Bluetooth로 시작을 마치면 DiPlay가 이 iPhone의 핸즈프리와 Bluetooth 음악 프로필을 끊습니다. 음악, 통화, Siri, 음성 채팅은 CarPlay에 남고 마이크는 DiPlay가 사용합니다. Bluetooth는 다음 무선 연결을 시작할 때만 쓰입니다. CarPlay가 끝나면 순정 프로필이 돌아옵니다. 헤드유닛이 그 프로필을 숨기면 DiPlay는 CarPlay가 끝날 때까지 Bluetooth를 끄고, 다음 연결을 위해 다시 켭니다. 끌 수 없으면 로그를 남기고 그대로 둡니다. 차량 전화 오디오는 끄세요. 일부 헤드유닛에서는 그 모드가 음악을 Bluetooth로 보냅니다. XTRONS IX에서는 바꿀 때까지 켜져 있고 다른 기기에서는 꺼져 있습니다. CarPlay가 연결된 동안 적용됩니다.</string>
+    <string name="settings_head_unit_bluetooth_address">헤드유닛 Bluetooth 주소 (실험 기능)</string>
+    <string name="settings_head_unit_bluetooth_address_description">이 헤드유닛의 Bluetooth 주소를 AA:BB:CC:DD:EE:FF 형식으로 입력합니다. DiPlay가 iPhone에 알려 통화와 Siri가 헤드유닛 핸즈프리 대신 CarPlay를 쓰게 합니다. 비워 두면 현재 주소를 유지합니다. 다음 연결부터 적용됩니다.</string>
+    <string name="settings_head_unit_bluetooth_address_not_set">설정 안 됨</string>
+    <string name="settings_head_unit_bluetooth_address_invalid">AA:BB:CC:DD:EE:FF 형식으로 입력하거나 비워 두세요.</string>
     <string name="phone_audio_route_apps">다른 앱의 VoIP 통화에 차량 전화 오디오 사용 (실험 기능)</string>
     <string name="phone_audio_route_apps_description">WhatsApp, Telegram 또는 Zoom 같은 다른 앱에서 음성 또는 영상 통화를 할 때도 같은 기능을 수행합니다. 이 상태에서는 차량이 일반 마이크를 음소거하므로 음성 메모와 일반 녹음에는 적용하지 않습니다. DiPlay가 실행 중이어야 하므로 핸들 키 접근성 서비스도 켜집니다. 기본값은 꺼짐입니다.</string>
     <string name="smooth_video">부드러운 영상 (실험 기능)</string>
