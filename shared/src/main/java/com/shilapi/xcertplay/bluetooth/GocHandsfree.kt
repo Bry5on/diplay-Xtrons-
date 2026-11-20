@@ -9,7 +9,8 @@ package com.shilapi.xcertplay.bluetooth
  * and answers MG1 ready through MG6 ongoing call.
  *
  * AT#CZ resets the whole module and drops every link, including SPP, so it is never sent.
- * A status word can name a node, but a write waits until that same node has shown an AT# command.
+ * A module reply (MW plus a version, or IA, IV, II, MG1–MG6) names the node that may receive AT#CD.
+ * Other status words stay listen-only. The caller still waits until CarPlay is up and the radio is quiet.
  */
 internal object GocHandsfree {
     const val DISCONNECT = "AT#CD\r\n"
@@ -18,9 +19,14 @@ internal object GocHandsfree {
     val NODES = listOf("/dev/BT_serial", "/dev/ttyBT0", "/dev/ttyS1")
 
     private val atCommand = Regex("""(?i)AT#[A-Za-z0-9]*""")
+    private val replyWord = Regex(
+        """(?i)(?:^|[\r\n])\s*(MW[0-9A-Z./]{4,}|IA|IV|II|MG[1-6])\s*(?:$|[\r\n])""",
+    )
     private val statusWord = Regex(
         """(?i)(?:^|[\r\n])\s*(IA|IV|II|MG[1-6]|MU[1-5]|SC|SD|IS|MF)\s*(?:$|[\r\n])""",
     )
+
+    data class ChannelMatch(val token: String, val reason: String, val allowsWrite: Boolean)
     private val hfpDown = Regex("""(?i)(?:^|[\r\n\s])(IA|II|MG1)(?=$|[\r\n\s])""")
     private val hfpUp = Regex("""(?i)(?:^|[\r\n\s])(IV|MG[3-6])(?=$|[\r\n\s])""")
     private val labeledSecret = Regex(
@@ -32,19 +38,29 @@ internal object GocHandsfree {
 
     fun nodeName(path: String): String = path.substringAfterLast('/')
 
-    /** The AT# command, or the status word, from one chunk. Null when the chunk is neither. */
-    fun matchedWord(sample: String): String? {
-        atCommand.find(sample)?.let { return it.value.uppercase() }
-        return statusWord.find(sample)?.groupValues?.get(1)?.uppercase()
+    /** A GOC reply, an AT# command, or a listen-only status word. */
+    fun channelMatch(sample: String): ChannelMatch? {
+        atCommand.find(sample)?.let {
+            return ChannelMatch(it.value.uppercase(), "at-command", allowsWrite = true)
+        }
+        replyWord.find(sample)?.let { match ->
+            val raw = match.groupValues[1].uppercase()
+            val token = if (raw.startsWith("MW")) "MW" else raw
+            return ChannelMatch(token, "reply", allowsWrite = true)
+        }
+        statusWord.find(sample)?.let {
+            return ChannelMatch(it.groupValues[1].uppercase(), "status", allowsWrite = false)
+        }
+        return null
     }
 
-    fun isCommandChannel(sample: String): Boolean = matchedWord(sample) != null
+    fun isCommandChannel(sample: String): Boolean = channelMatch(sample) != null
 
     fun hasAtCommand(sample: String): Boolean = atCommand.containsMatchIn(sample)
 
     /** Null when a disconnect write is allowed. */
-    fun disconnectSkip(identified: Boolean, atConfirmed: Boolean): String? = when {
-        atConfirmed -> null
+    fun disconnectSkip(identified: Boolean, writeAllowed: Boolean): String? = when {
+        writeAllowed -> null
         identified -> "status-only"
         else -> "no-command-channel"
     }

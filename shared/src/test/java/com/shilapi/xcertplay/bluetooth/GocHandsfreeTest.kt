@@ -12,10 +12,17 @@ class GocHandsfreeTest {
         assertTrue(GocHandsfree.isCommandChannel("MG3\n"))
         assertFalse(GocHandsfree.isCommandChannel("random binary ok data"))
         assertTrue(GocHandsfree.hasAtCommand("at#cd"))
-        assertEquals("IV", GocHandsfree.matchedWord("IV\r"))
-        assertEquals("AT#CD", GocHandsfree.matchedWord("AT#CD\r\n"))
-        assertEquals("status-only", GocHandsfree.disconnectSkip(identified = true, atConfirmed = false))
-        assertEquals(null, GocHandsfree.disconnectSkip(identified = true, atConfirmed = true))
+        val version = GocHandsfree.channelMatch("MWGOCRF/D4.91G5.1/230327\r\n")
+        assertEquals("MW", version?.token)
+        assertEquals("reply", version?.reason)
+        assertEquals(true, version?.allowsWrite)
+        val call = GocHandsfree.channelMatch("MG6\r")
+        assertEquals("MG6", call?.token)
+        assertEquals("reply", call?.reason)
+        assertEquals("status", GocHandsfree.channelMatch("SC\r")?.reason)
+        assertEquals(false, GocHandsfree.channelMatch("SC\r")?.allowsWrite)
+        assertEquals("status-only", GocHandsfree.disconnectSkip(identified = true, writeAllowed = false))
+        assertEquals(null, GocHandsfree.disconnectSkip(identified = true, writeAllowed = true))
     }
 
     @Test fun disconnectAndReconnectStayOnHandsFree() {

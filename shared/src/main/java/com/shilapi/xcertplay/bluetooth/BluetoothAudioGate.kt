@@ -57,9 +57,9 @@ object BluetoothAudioGate {
         BluetoothAudioPolicy.Profile.HFP_CLIENT,
     )
 
-    private var session = false
+    @Volatile private var session = false
     private var wireless = false
-    private var bootstrapReleased = false
+    @Volatile private var bootstrapReleased = false
     private var phone: String? = null
     private var iosDeviceId: String? = null
     private var holding = false
@@ -68,13 +68,14 @@ object BluetoothAudioGate {
     private var vendorLogged = false
     private var moduleLogged = false
     private var radioCycled = false
-    private var cycleWaiting = false
+    @Volatile private var cycleWaiting = false
+    @Volatile private var speechDuringCycle = false
     private var lastReturnCycleAt = -1L
     private var watchMediaUntil = 0L
     private var returnTask: ScheduledFuture<*>? = null
     private val modes = CarPlayModeTracker()
     private var lastModesLine = ""
-    private var callHold = false
+    @Volatile private var callHold = false
     private val callHoldRetries = AtomicInteger()
     private val linkCheckQuietUntilNanos = AtomicLong()
     private var receiverRegistered = false
@@ -125,8 +126,8 @@ object BluetoothAudioGate {
                 BluetoothAudioPreference.disconnectHandsfree(app),
                 ::publish,
             )
-            if (bootstrapReleased) BluetoothModuleSerial.allowCommands()
             drop()
+            refreshSerialWindow()
         }
     }
 
@@ -137,8 +138,8 @@ object BluetoothAudioGate {
             appContext = app
             reportLog = log
             bootstrapReleased = true
-            BluetoothModuleSerial.allowCommands()
             drop()
+            refreshSerialWindow()
         }
     }
 
@@ -152,6 +153,7 @@ object BluetoothAudioGate {
             appContext = app
             reportLog = log
             session = false
+            BluetoothModuleSerial.noteSessionEnded()
             BluetoothModuleSerial.stop()
             restore()
         }
@@ -171,6 +173,15 @@ object BluetoothAudioGate {
      * True while DiPlay has turned the radio off, and for a few seconds after it comes back.
      * A connect in that window must not be reported as Bluetooth that can never work.
      */
+    /** True while a radio cycle, a speech hold, or a disabled adapter should delay AT#CD. */
+    fun serialBlockedByRadio(): Boolean =
+        cycleWaiting || speechDuringCycle || callHold || radioAdapterDisabled()
+
+    private fun refreshSerialWindow() {
+        val ready = session && bootstrapReleased && !serialBlockedByRadio()
+        BluetoothModuleSerial.allowCommands(ready)
+    }
+
     fun bluetoothLinkCheckSuspended(): Boolean {
         if (cycleWaiting || callHold) return true
         val until = linkCheckQuietUntilNanos.get()
@@ -191,9 +202,14 @@ object BluetoothAudioGate {
                 "started" -> {
                     returnTask?.cancel(false)
                     if (holdDuringCalls()) holdRadioForCall()
+                    else if (cycleWaiting || radioAdapterDisabled()) holdThroughSpeech()
                 }
                 "ended" -> {
+                    val heldForSpeech = speechDuringCycle
+                    speechDuringCycle = false
                     callHold = false
+                    if (heldForSpeech) publish("Bluetooth audio: radio hold released reason=speech-ended")
+                    refreshSerialWindow()
                     returnTask?.cancel(false)
                     returnTask = later.schedule(
                         { worker.execute { returnMusicAfterCall() } },
@@ -319,6 +335,7 @@ object BluetoothAudioGate {
                 returnTask?.cancel(false)
                 modes.reset()
                 callHold = false
+                speechDuringCycle = false
                 lastModesLine = ""
                 reconnects.set(0)
                 radioRestarts.set(0)
@@ -351,6 +368,7 @@ object BluetoothAudioGate {
         returnTask?.cancel(false)
         modes.reset()
         callHold = false
+        speechDuringCycle = false
         lastModesLine = ""
         reconnects.set(0)
         radioRestarts.set(0)
@@ -467,8 +485,23 @@ object BluetoothAudioGate {
         )
         if (!enabledNow || disabled) {
             cycleWaiting = true
+            refreshSerialWindow()
             later.schedule({ worker.execute { finishRadioCycle() } }, 8, TimeUnit.SECONDS)
         }
+    }
+
+    private fun radioAdapterDisabled(): Boolean {
+        val context = appContext ?: return false
+        val adapter = adapter(context) ?: return false
+        return runCatching { adapter.isEnabled }.getOrNull() == false
+    }
+
+    /** Speech started while the radio was already off. Leave it off until speech ends. */
+    private fun holdThroughSpeech() {
+        if (speechDuringCycle) return
+        speechDuringCycle = true
+        publish("Bluetooth audio: radio held reason=speech-during-cycle")
+        refreshSerialWindow()
     }
 
     private fun holdDuringCalls(): Boolean {
@@ -484,6 +517,7 @@ object BluetoothAudioGate {
         callHoldRetries.set(0)
         val disabled = runCatching { adapter.disable() }.getOrDefault(false)
         publish("Bluetooth audio: call-hold off result=$disabled signal=modesChanged")
+        refreshSerialWindow()
     }
 
     private fun quietLinkCheck() {
@@ -491,22 +525,26 @@ object BluetoothAudioGate {
     }
 
     private fun onRadioReturned() {
-        if (callHold && modes.busy) {
+        if ((callHold || speechDuringCycle) && modes.busy) {
             val context = appContext ?: return
             val adapter = adapter(context) ?: return
             if (callHoldRetries.incrementAndGet() > MAX_RECONNECTS) {
                 callHold = false
+                speechDuringCycle = false
                 quietLinkCheck()
-                publish("Bluetooth audio: call-hold stopped reason=head-unit-keeps-enabling")
+                refreshSerialWindow()
+                publish("Bluetooth audio: radio held stopped reason=head-unit-keeps-enabling")
                 return
             }
             val again = runCatching { adapter.disable() }.getOrDefault(false)
-            publish("Bluetooth audio: call-hold disable again result=$again")
+            val why = if (callHold) "call-hold" else "speech-during-cycle"
+            publish("Bluetooth audio: $why disable again result=$again")
             return
         }
         if (cycleWaiting) {
             cycleWaiting = false
             quietLinkCheck()
+            refreshSerialWindow()
             publish("Bluetooth audio: radio cycle back on")
             publish("Bluetooth audio: radio cycle complete hfp-hold=unavailable")
             return
@@ -517,9 +555,11 @@ object BluetoothAudioGate {
 
     private fun finishRadioCycle() {
         if (!cycleWaiting) return
-        if (callHold && modes.busy) {
+        if ((callHold || speechDuringCycle) && modes.busy) {
             cycleWaiting = false
-            publish("Bluetooth audio: radio cycle paused reason=call-hold")
+            val why = if (callHold) "call-hold" else "speech-during-cycle"
+            publish("Bluetooth audio: radio cycle paused reason=$why")
+            refreshSerialWindow()
             return
         }
         cycleWaiting = false
@@ -534,6 +574,7 @@ object BluetoothAudioGate {
             publish("Bluetooth audio: radio cycle restore result=$enabled")
         }
         publish("Bluetooth audio: radio cycle complete hfp-hold=unavailable")
+        refreshSerialWindow()
     }
 
     private fun reclaimRadio() {

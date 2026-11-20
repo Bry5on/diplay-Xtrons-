@@ -6,8 +6,10 @@ import android.system.OsConstants
 import android.system.StructPollfd
 import java.io.FileDescriptor
 import java.util.ArrayDeque
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -35,8 +37,8 @@ internal object BluetoothModuleSerial {
         thread.start()
     }
 
-    fun allowCommands() {
-        commandsAllowed.set(true)
+    fun allowCommands(ready: Boolean) {
+        commandsAllowed.set(ready)
     }
 
     fun setDisconnectWanted(wanted: Boolean) {
@@ -66,6 +68,16 @@ internal object BluetoothModuleSerial {
         writeCommand(node, GocHandsfree.QUERY, "query")
     }
 
+    /** CarPlay ended. Says so when that was within 10 seconds of AT#CD. */
+    fun noteSessionEnded() {
+        val at = lastDisconnectAt.get()
+        if (at <= 0L) return
+        val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - at)
+        if (elapsed in 0..10_000) {
+            publish("Bluetooth module serial: session dropped after disconnect elapsedMs=$elapsed")
+        }
+    }
+
     fun stop() {
         running.set(false)
         reader?.join(2_500)
@@ -76,6 +88,7 @@ internal object BluetoothModuleSerial {
 
     private val command = AtomicReference<String?>(null)
     private val disconnectSends = AtomicInteger()
+    private val lastDisconnectAt = AtomicLong()
     private val restored = AtomicBoolean(false)
     @Volatile private var lastNode: String? = null
     @Volatile private var lastNodeConfirmed = false
@@ -92,13 +105,14 @@ internal object BluetoothModuleSerial {
         val counts = mutableMapOf<String, Int>()
         val skipped = mutableMapOf<String, Int>()
         var identified: String? = null
-        var identifiedByAt = false
+        var writeAllowed = false
         val cycle = GocHandsfree.Cycle()
         var disconnectSentAt = 0L
         var replyLogged = false
         var writeFailures = 0
         var commandSkipLogged = false
         var statusOnlyLogged = false
+        var deferLogged = false
         try {
             while (running.get()) {
                 val polls = openFds.map { fd ->
@@ -117,17 +131,17 @@ internal object BluetoothModuleSerial {
                         val chunk = takeChunk(queue)
                         if (chunk.isEmpty()) break
                         val sample = String(chunk, Charsets.ISO_8859_1)
-                        val word = GocHandsfree.matchedWord(sample)
-                        if (word != null) {
-                            val at = GocHandsfree.hasAtCommand(sample)
-                            if (identified == null || (at && !identifiedByAt && cycle.sends == 0)) {
+                        val match = GocHandsfree.channelMatch(sample)
+                        if (match != null) {
+                            val upgrade = match.allowsWrite && !writeAllowed && cycle.sends == 0
+                            if (identified == null || upgrade) {
                                 identified = opened.node
                                 lastNode = opened.node
-                                identifiedByAt = at
-                                if (at) lastNodeConfirmed = true
+                                writeAllowed = match.allowsWrite
+                                if (match.allowsWrite) lastNodeConfirmed = true
                                 publish(
                                     "Bluetooth module serial: command-node=${opened.node} " +
-                                        "reason=${if (at) "at-command" else "status"} token=$word",
+                                        "reason=${match.reason} token=${match.token}",
                                 )
                             }
                         }
@@ -144,13 +158,18 @@ internal object BluetoothModuleSerial {
                         logChunk(opened.node, chunk, windows, counts, skipped)
                     }
                 }
-                if (disconnectWanted.get() && commandsAllowed.get() && identified != null && !identifiedByAt &&
+                if (disconnectWanted.get() && commandsAllowed.get() && identified != null && !writeAllowed &&
                     cycle.sends == 0 && !statusOnlyLogged
                 ) {
                     publish("Bluetooth module serial: hfp-disconnect skipped reason=status-only")
                     statusOnlyLogged = true
                 }
-                maybeSend(identified, identifiedByAt, cycle, writeFailures, commandSkipLogged) { sentAt, failed, skipped ->
+                if (disconnectWanted.get() && writeAllowed && cycle.sends == 0 && !commandsAllowed.get() && !deferLogged) {
+                    val why = if (BluetoothAudioGate.serialBlockedByRadio()) "radio-cycle" else "session"
+                    publish("Bluetooth module serial: hfp-disconnect deferred reason=$why")
+                    deferLogged = true
+                }
+                maybeSend(identified, writeAllowed, cycle, writeFailures, commandSkipLogged) { sentAt, failed, skipped ->
                     if (sentAt > 0L) {
                         disconnectSentAt = sentAt
                         replyLogged = false
@@ -166,11 +185,11 @@ internal object BluetoothModuleSerial {
                 }
             }
             val node = identified
-            if (node != null && identifiedByAt && cycle.sends > 0 && !restored.get()) {
+            if (node != null && writeAllowed && cycle.sends > 0 && !restored.get()) {
                 writeCommand(node, GocHandsfree.RECONNECT, "restore")
                 writeCommand(node, GocHandsfree.QUERY, "query")
             } else if (cycle.sends == 0 && disconnectWanted.get() && commandsAllowed.get() && !statusOnlyLogged) {
-                val reason = GocHandsfree.disconnectSkip(identified != null, identifiedByAt)
+                val reason = GocHandsfree.disconnectSkip(identified != null, writeAllowed)
                 publish("Bluetooth module serial: hfp-disconnect skipped reason=$reason")
             }
         } finally {
@@ -193,7 +212,8 @@ internal object BluetoothModuleSerial {
             publish("Bluetooth module serial: restore skipped reason=status-only")
             return
         }
-        if (requested != null && (!commandsAllowed.get() || node == null)) {
+        val restoreNow = requested == GocHandsfree.RECONNECT && node != null && atConfirmed
+        if (requested != null && !restoreNow && (!commandsAllowed.get() || node == null)) {
             if (!skipLogged) {
                 publish("Bluetooth module serial: write skipped reason=no-command-channel command=${requested.trim()}")
             }
@@ -202,8 +222,9 @@ internal object BluetoothModuleSerial {
         }
         val next = when {
             requested == GocHandsfree.RECONNECT -> GocHandsfree.RECONNECT
-            requested == GocHandsfree.DISCONNECT && atConfirmed && !cycle.stopped -> GocHandsfree.DISCONNECT
-            disconnectWanted.get() && atConfirmed && !cycle.stopped && cycle.sends == 0 && writeFailures < 2 -> GocHandsfree.DISCONNECT
+            requested == GocHandsfree.DISCONNECT && atConfirmed && commandsAllowed.get() && !cycle.stopped -> GocHandsfree.DISCONNECT
+            disconnectWanted.get() && commandsAllowed.get() && atConfirmed && !cycle.stopped &&
+                cycle.sends == 0 && writeFailures < 2 -> GocHandsfree.DISCONNECT
             else -> return
         }
         if (node == null) return
@@ -217,6 +238,7 @@ internal object BluetoothModuleSerial {
         if (next == GocHandsfree.DISCONNECT) {
             cycle.sent()
             disconnectSends.incrementAndGet()
+            lastDisconnectAt.set(System.nanoTime())
             restored.set(false)
             update(System.nanoTime(), 0, skipLogged)
             writeCommand(node, GocHandsfree.QUERY, "query")
