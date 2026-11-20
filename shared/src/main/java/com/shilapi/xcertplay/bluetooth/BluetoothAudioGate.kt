@@ -200,9 +200,12 @@ object BluetoothAudioGate {
             }
             when (event) {
                 "started" -> {
+                    val radioOn = !radioAdapterDisabled()
+                    publish("Bluetooth audio: speech-start radio=${if (radioOn) "on" else "off"}")
                     returnTask?.cancel(false)
-                    if (holdDuringCalls()) holdRadioForCall()
-                    else if (cycleWaiting || radioAdapterDisabled()) holdThroughSpeech()
+                    if (handsfreeDisconnectOn()) holdRadioForSpeech(radioOn)
+                    else if (holdDuringCalls()) holdRadioForCall()
+                    else if (cycleWaiting || !radioOn) holdThroughSpeech()
                 }
                 "ended" -> {
                     val heldForSpeech = speechDuringCycle
@@ -496,6 +499,40 @@ object BluetoothAudioGate {
         return runCatching { adapter.isEnabled }.getOrNull() == false
     }
 
+    private fun handsfreeDisconnectOn(): Boolean {
+        val context = appContext ?: return false
+        return BluetoothAudioPreference.disconnectHandsfree(context)
+    }
+
+    /**
+     * The disconnect switch is on. Turn the radio off for this speech and keep it off if the
+     * head unit switches it back on. The route is chosen from the state at speech start.
+     */
+    private fun holdRadioForSpeech(radioOn: Boolean) {
+        speechDuringCycle = true
+        if (radioOn) {
+            val context = appContext ?: return
+            val adapter = adapter(context) ?: return
+            val disabled = runCatching { adapter.disable() }.getOrDefault(false)
+            publish("Bluetooth audio: speech-hold off result=$disabled")
+        } else {
+            publish("Bluetooth audio: radio held reason=speech-during-cycle")
+        }
+        refreshSerialWindow()
+        later.schedule({ worker.execute { watchSpeechRadio() } }, 1, TimeUnit.SECONDS)
+    }
+
+    private fun watchSpeechRadio() {
+        if (!speechDuringCycle || !modes.busy || !handsfreeDisconnectOn()) return
+        if (!radioAdapterDisabled()) {
+            val context = appContext ?: return
+            val adapter = adapter(context) ?: return
+            val again = runCatching { adapter.disable() }.getOrDefault(false)
+            publish("Bluetooth audio: speech-hold radio=on disable result=$again")
+        }
+        later.schedule({ worker.execute { watchSpeechRadio() } }, 1, TimeUnit.SECONDS)
+    }
+
     /** Speech started while the radio was already off. Leave it off until speech ends. */
     private fun holdThroughSpeech() {
         if (speechDuringCycle) return
@@ -541,6 +578,13 @@ object BluetoothAudioGate {
             publish("Bluetooth audio: $why disable again result=$again")
             return
         }
+        if (cycleWaiting && handsfreeDisconnectOn()) {
+            val context = appContext ?: return
+            val adapter = adapter(context) ?: return
+            val again = runCatching { adapter.disable() }.getOrDefault(false)
+            publish("Bluetooth audio: radio cycle keep-off result=$again")
+            return
+        }
         if (cycleWaiting) {
             cycleWaiting = false
             quietLinkCheck()
@@ -558,7 +602,8 @@ object BluetoothAudioGate {
         if ((callHold || speechDuringCycle) && modes.busy) {
             cycleWaiting = false
             val why = if (callHold) "call-hold" else "speech-during-cycle"
-            publish("Bluetooth audio: radio cycle paused reason=$why")
+            val state = if (radioAdapterDisabled()) "off" else "on"
+            publish("Bluetooth audio: radio cycle paused reason=$why radio=$state")
             refreshSerialWindow()
             return
         }
