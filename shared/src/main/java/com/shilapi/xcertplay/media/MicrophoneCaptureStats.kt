@@ -33,9 +33,10 @@ internal class MicrophoneCaptureStats(
     private var peakSample = 0
     private var routedDeviceType: Int? = null
 
-    fun started(routeType: Int?) {
+    fun started(routeType: Int?, environment: String? = null) {
         routedDeviceType = routeType
-        emit("Microphone: start $metadata routedDeviceType=${routeType ?: "unknown"}")
+        val extra = if (environment.isNullOrBlank()) "" else " $environment"
+        emit("Microphone: start $metadata routedDeviceType=${routeType ?: "unknown"}$extra")
     }
 
     /**

@@ -3,9 +3,10 @@ package com.shilapi.xcertplay.orchestration
 /**
  * Per-generation markers for the AirPlay handshake that can finish before [activeSession].
  *
- * An RFCOMM EOF in that window must keep the Wi-Fi tunnel only after this generation has sent
- * CarPlayStartSession (0x4301), accepted the phone's control TCP connection, and received the
- * session SETUP that carries deviceID. TCP alone, or SETUP before that TCP accept, does not count.
+ * An RFCOMM EOF in that window keeps the Wi-Fi tunnel after this generation has sent
+ * CarPlayStartSession (0x4301) and accepted the phone's control TCP connection. SETUP often
+ * arrives a few milliseconds after that EOF. TCP before StartSession, or SETUP before that
+ * TCP accept, does not count.
  */
 internal class WirelessAirPlayHandshake {
     private var generation = -1
@@ -35,6 +36,10 @@ internal class WirelessAirPlayHandshake {
 
     @Synchronized fun reachedSessionSetup(generation: Int): Boolean =
         this.generation == generation && startSessionSent && tcpAccepted && sessionSetup
+
+    /** StartSession was sent and the phone's TCP connection was accepted. SETUP may still be in flight. */
+    @Synchronized fun reachedPhoneTcp(generation: Int): Boolean =
+        this.generation == generation && startSessionSent && tcpAccepted
 
     @Synchronized fun clear() {
         generation = -1

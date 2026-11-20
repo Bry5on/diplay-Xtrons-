@@ -3,10 +3,12 @@ package com.shilapi.xcertplay.media
 import android.media.AudioFormat as AndroidAudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioRecordingConfiguration
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.util.Log
 import com.shilapi.xcertplay.airplay.AudioCodecKind
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
@@ -57,6 +59,7 @@ internal class MicrophoneUplink(
     @Volatile private var opusEncoder: MicrophoneOpusEncoder? = null
     @Volatile private var effects: List<AudioEffect> = emptyList()
     @Volatile private var echoCanceller: CallEchoCanceller? = null
+    private var effectsNote = "not-attached"
     private var thread: Thread? = null
 
     fun start(): Boolean {
@@ -148,13 +151,19 @@ internal class MicrophoneUplink(
         return try {
             if (config.audioType == "telephony") {
                 echoCanceller = createEchoCanceller()
-                if (!speakerphoneCall) effects = voiceEffects(nextRecorder.audioSessionId)
+                if (!speakerphoneCall) {
+                    effects = voiceEffects(nextRecorder.audioSessionId)
+                } else {
+                    effectsNote = "speakerphone"
+                }
                 if (echoReference != null) {
                     Log.i(TAG, "microphone echo canceller enabled=${echoCanceller != null} tail=${ECHO_TAIL_MILLIS}ms")
                 }
+            } else {
+                effectsNote = "not-call"
             }
             nextRecorder.startRecording()
-            stats.started(routeType(nextRecorder))
+            stats.started(routeType(nextRecorder), captureReport(nextRecorder))
             thread = Thread({ capture(nextRecorder, nextSocket) }, "carplay-mic").apply {
                 isDaemon = true
                 start()
@@ -208,9 +217,13 @@ internal class MicrophoneUplink(
         if (PhoneAudioRoute.carPlayCallsUseCarAudio()) {
             // In the car's phone audio state its own processing handles echo and noise, and was only measured
             // with the platform effects off.
-            Log.i(TAG, "microphone effects left to the car's phone audio state")
+            effectsNote = "car-phone-audio"
+            val message = "Microphone: effects skipped reason=car-phone-audio"
+            Log.i(TAG, message)
+            runCatching { onDiagnostic(message) }
             return emptyList()
         }
+        effectsNote = "platform"
         var aec: AudioEffect? = null
         if (echoCanceller != null) {
             // VOICE_COMMUNICATION can enable AEC by default. Keep its controller alive and
@@ -430,16 +443,60 @@ internal class MicrophoneUplink(
 
     private fun routeType(recorder: AudioRecord): Int? = runCatching { recorder.routedDevice?.type }.getOrNull()
 
+    private fun captureReport(recorder: AudioRecord): String {
+        val manager = audioManager
+        val mode = runCatching { manager?.mode }.getOrNull()
+        return MicrophonePath.report(
+            audioType = config.audioType,
+            source = recorder.audioSource,
+            routedDeviceType = routeType(recorder),
+            clientSilenced = clientSilenced(manager, recorder.audioSessionId),
+            audioMode = mode,
+            otherRecordings = otherRecordings(manager, recorder.audioSessionId),
+            carPhoneAudio = runCatching { PhoneAudioRoute.carPlayCallsUseCarAudio() }.getOrDefault(false),
+            aecAvailable = effectAvailable { AcousticEchoCanceler.isAvailable() },
+            aecEnabled = effects.filterIsInstance<AcousticEchoCanceler>().any { it.enabled },
+            nsAvailable = effectAvailable { NoiseSuppressor.isAvailable() },
+            nsEnabled = effects.filterIsInstance<NoiseSuppressor>().any { it.enabled },
+            effects = effectsNote,
+        )
+    }
+
+    private fun effectAvailable(query: () -> Boolean): Boolean? = runCatching(query).getOrNull()
+
+    /** Null below API 29, where [AudioRecordingConfiguration.isClientSilenced] does not exist. */
+    private fun clientSilenced(manager: AudioManager?, sessionId: Int): String {
+        if (manager == null) return "unknown"
+        if (Build.VERSION.SDK_INT < 29) return "unsupported"
+        val own = recordingConfigurations(manager).firstOrNull { it.clientAudioSessionId == sessionId }
+            ?: return "absent"
+        return runCatching { own.isClientSilenced.toString() }.getOrDefault("unreadable")
+    }
+
+    private fun otherRecordings(manager: AudioManager?, sessionId: Int): String {
+        if (manager == null) return "unknown"
+        val others = recordingConfigurations(manager)
+            .filter { it.clientAudioSessionId != sessionId }
+            .map { MicrophoneCaptureStats.sourceName(it.clientAudioSource) }
+        return if (others.isEmpty()) "none" else others.take(MAX_LISTED_RECORDINGS).joinToString(",", "[", "]")
+    }
+
+    private fun recordingConfigurations(manager: AudioManager): List<AudioRecordingConfiguration> =
+        runCatching { manager.activeRecordingConfigurations }.getOrDefault(emptyList())
+
     /**
      * The audio mode and the sources of the other recordings running now. A head unit that stays in
      * communication mode after a call, or another app holding the microphone, can each leave this one silent.
      * Other apps' recordings carry no package name for a normal app, only their source.
      */
     private fun silenceDetail(manager: AudioManager, ownSession: Int): String {
-        val others = manager.activeRecordingConfigurations
+        val others = recordingConfigurations(manager)
             .filter { it.clientAudioSessionId != ownSession }
             .map { MicrophoneCaptureStats.sourceName(it.clientAudioSource) }
-        return "audioMode=${manager.mode} otherRecordings=" +
+        val silenced = clientSilenced(manager, ownSession).let { value ->
+            if (value == "unsupported") "" else " clientSilenced=$value"
+        }
+        return "audioMode=${manager.mode}$silenced otherRecordings=" +
             if (others.isEmpty()) "none" else others.take(MAX_LISTED_RECORDINGS).joinToString(",", "[", "]")
     }
 

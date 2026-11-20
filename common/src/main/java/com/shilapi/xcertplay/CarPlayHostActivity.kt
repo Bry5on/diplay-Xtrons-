@@ -98,6 +98,7 @@ import com.shilapi.xcertplay.location.AndroidCarPlayLocationProvider
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.media.CarPlayTouchMapper
 import com.shilapi.xcertplay.media.CarPlayVideoLayout
+import com.shilapi.xcertplay.media.MediaAudioBuffer
 import com.shilapi.xcertplay.network.CarPlayVpnService
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRuntimeConfig
@@ -173,6 +174,7 @@ open class CarPlayHostActivity : ComponentActivity() {
     private var startupRetryStopped = false
     private var startupRetryButton: View? = null
     private var startupFailureGeneration = -1
+    private var carPlayReachedThisRun = false
     private lateinit var airPlayIdentity: AirPlayIdentity
     private var languagePreferenceAtCreate = AppLocale.SYSTEM
     // The other CarPlay screen declaration opened in this one's place (CarPlayScreen).
@@ -5315,14 +5317,19 @@ open class CarPlayHostActivity : ComponentActivity() {
                 onScreenStreamStateChanged(controllerGeneration, type, active)
             },
             mediaBufferMillis = AirPlayPersistence.loadMediaBufferMillis(this, wireless = wirelessEnabled),
+            callBufferMillis = MediaAudioBuffer.callMillis(wireless = wirelessEnabled),
             onAudioDiagnostic = { message ->
                 if (message.startsWith("Microphone: ")) {
                     AsyncDiagnosticLog.append(diagnosticLog, message)
                 } else {
                     diagnosticLog?.append(formattedLogLine(message, System.currentTimeMillis()))
                 }
+                if (message.startsWith("Microphone: start ")) logBluetoothAudio("microphone")
             },
-            onMediaAudioChanged = CarPlayMediaKeys::onMediaAudioChanged,
+            onMediaAudioChanged = { active ->
+                CarPlayMediaKeys.onMediaAudioChanged(active)
+                if (active) logBluetoothAudio("media")
+            },
             callEchoCancellation = AirPlayPersistence.loadCallEchoCancellation(this),
             callVoiceFilter = AirPlayPersistence.loadCallVoiceFilter(this),
             callSpeakerphone = { AirPlayPersistence.loadCallSpeakerphone(this) },
@@ -5383,6 +5390,13 @@ open class CarPlayHostActivity : ComponentActivity() {
                         requestedSmallWindowForStream != smallWindowActive()) {
                         reconnectAfterLoss("Cluster small-window navi ${if (smallWindowActive()) "on" else "off"}")
                     }
+                    carPlayReachedThisRun = true
+                    com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.onSessionActive(
+                        this@CarPlayHostActivity,
+                        wireless = wirelessEnabled,
+                        phoneAddress = DiPlayPreferences.phoneAddress(this@CarPlayHostActivity),
+                    ) { appendFileLog(it) }
+                    logBluetoothAudio("session")
                     if (menuOpen) return@runOnUiThread
                     appendLog("AirPlay session active")
                 }
@@ -5421,6 +5435,7 @@ open class CarPlayHostActivity : ComponentActivity() {
                     CarPlayBackgroundSession.active = false
                     callPopupSessionReady = false
                     updateCallPopupGuard()
+                    com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.onSessionEnded(this@CarPlayHostActivity) { appendFileLog(it) }
                     if (menuOpen) {
                         recoveryPendingAfterMenu = true
                         return@runOnUiThread
@@ -5479,6 +5494,15 @@ open class CarPlayHostActivity : ComponentActivity() {
         controllerGeneration: Int,
     ): (CarPlayStatus) -> Unit = report@{ status ->
         if (controllerGeneration != restartGeneration) return@report
+        when (status) {
+            is CarPlayStatus.WirelessActive ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bootstrapReleased(this) { appendFileLog(it) }
+            is CarPlayStatus.WirelessActiveFallback ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bootstrapHeld()
+            CarPlayStatus.ConnectingBluetooth ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bootstrapHeld()
+            else -> Unit
+        }
         if (status is CarPlayStatus.RunningControl || status is CarPlayStatus.RunningWireless) {
             controlRunningCount++
             lossSinceControlRunning = false
@@ -5622,6 +5646,7 @@ open class CarPlayHostActivity : ComponentActivity() {
     private fun startCarPlay(size: DisplaySize) {
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
+        com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.beforeBootstrap(this) { appendFileLog(it) }
         val controllerGeneration = restartGeneration
         // Settings → Connection can change the target while this screen stays open (#696).
         mfiTarget = AirPlayPersistence.loadMfiTarget(this)
@@ -6054,25 +6079,34 @@ open class CarPlayHostActivity : ComponentActivity() {
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
         if (reconnectScheduled) return
-        val startupDelay = if (startupFailure != null && startupFailure.retryable)
+        val suppressUnusable = startupFailure?.suppressedByRadioCycle(
+            sessionReached = carPlayReachedThisRun,
+            radioCycleSuspended = com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bluetoothLinkCheckSuspended(),
+        ) == true
+        val effectiveFailure = if (suppressUnusable) {
+            val why = if (carPlayReachedThisRun) "session-reached" else "radio-cycle"
+            appendLog("wireless startup Bluetooth-unusable suppressed reason=$why")
+            null
+        } else startupFailure
+        val startupDelay = if (effectiveFailure != null && effectiveFailure.retryable)
             startupRetryBudget.nextDelayMillis() else null
-        if (startupFailure != null && startupDelay == null) {
+        if (effectiveFailure != null && startupDelay == null) {
             startupRetryStopped = true
             startupRetryButton?.visibility = View.VISIBLE
             if (knownCause != null) {
                 setConnectionStage("${getString(ConnectionFailureGuidance.stage(knownCause))}\n" +
                     getString(R.string.wireless_startup_retries_exhausted))
-            } else if (startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
+            } else if (effectiveFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
                 // Its cause is in English, for the report; the help line below says what to check.
                 setConnectionStage("${getString(R.string.hotspot_network_not_ready)}\n" +
                     getString(R.string.wireless_startup_retries_exhausted))
-            } else if (!startupFailure.retryable) {
+            } else if (!effectiveFailure.retryable) {
                 setConnectionStage(reason, englishReason)
             } else {
                 setConnectionStage("$reason\n${getString(R.string.wireless_startup_retries_exhausted)}",
                     "$englishReason\n${englishResources.getString(R.string.wireless_startup_retries_exhausted)}")
             }
-            appendLog("wireless startup recovery stopped generation=$restartGeneration reason=$startupFailure retries=${startupRetryBudget.retries}")
+            appendLog("wireless startup recovery stopped generation=$restartGeneration reason=$effectiveFailure retries=${startupRetryBudget.retries}")
             return
         }
         reconnectScheduled = true
@@ -6350,6 +6384,7 @@ open class CarPlayHostActivity : ComponentActivity() {
         sink = null
         sessionDisplay = null
         discardLastPicture()
+        com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.onSessionEnded(this) { appendFileLog(it) }
         Log.i(TAG, "shutdown reason=$reason terminateProcess=$terminateProcess")
         teardownExecutor.execute {
             oldController?.close()
@@ -6800,6 +6835,11 @@ open class CarPlayHostActivity : ComponentActivity() {
         englishMessage.contains("reconnect", true) || englishMessage.contains("ended", true) -> getString(R.string.reconnecting_to_your_iphone)
         englishMessage.contains("active", true) || englishMessage.contains("running", true) -> getString(R.string.opening_carplay)
         else -> getString(R.string.getting_carplay_ready)
+    }
+
+    private fun logBluetoothAudio(reason: String) {
+        appendLog("Bluetooth audio: check reason=$reason ${com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.report(this)}")
+        com.shilapi.xcertplay.bluetooth.FactoryBluetoothSnapshot.log(applicationContext) { appendFileLog(it) }
     }
 
     private fun appendLog(message: String) = appendFileLog(message)

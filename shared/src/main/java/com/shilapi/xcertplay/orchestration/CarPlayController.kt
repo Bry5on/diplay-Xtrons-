@@ -158,18 +158,20 @@ internal fun isWirelessHandoffInProgress(
  * A clean Bluetooth EOF is [Iap2LinkEngine.feedEof], which dies with no reason. The link
  * pump then throws [IOException] "iAP2 link ended", so [Iap2WirelessControlClient.run]
  * never returns [Iap2WirelessControlTerminal.CHANNEL_CLOSED]. Once an AirPlay session is
- * up, a frame has rendered, or this generation has sent CarPlayStartSession and received the
- * phone's session SETUP (deviceID) on an accepted AirPlay control connection. Before any of
- * those, the bring-up failure path still runs. A SETUP-only keep-alive is provisional: the
- * caller must fail the generation if no session arrives.
+ * up, a frame has rendered, this generation has received the phone's session SETUP, or this
+ * generation has sent CarPlayStartSession and accepted the phone's TCP connection. The iPhone
+ * often closes RFCOMM in the few milliseconds before SETUP is parsed. Before any of those, the
+ * bring-up failure path still runs. A keep-alive that is still waiting for the session is
+ * provisional: the caller must fail the generation if no session arrives.
  */
 internal fun isRfcommEofAfterAirPlaySession(
     error: Throwable,
     sessionActive: Boolean,
     frameRendered: Boolean,
     airPlaySetupReached: Boolean = false,
+    phoneTcpReached: Boolean = false,
 ): Boolean =
-    (sessionActive || frameRendered || airPlaySetupReached) &&
+    (sessionActive || frameRendered || airPlaySetupReached || phoneTcpReached) &&
         error is IOException &&
         error.message?.contains("iAP2 link ended") == true
 
@@ -480,6 +482,13 @@ class CarPlayController(
             debugLog(
                 "AirPlay command type=$type params=${params.keys.sorted().joinToString(",")}",
             )
+            if (type.equals("modesChanged", ignoreCase = true)) {
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.onModesChanged(params)
+            }
+            if (isBluetoothHandoffCommand(type)) {
+                val deviceId = (params["deviceID"] as? String) ?: (params["deviceId"] as? String)
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.noteIosDisableBluetooth(deviceId)
+            }
             if (
                 config.transport == CarPlayTransport.WIRELESS &&
                 !closed &&
@@ -1459,10 +1468,32 @@ class CarPlayController(
             if (!adapter.isEnabled) throw IOException(BluetoothRadioCheck.RADIO_OFF)
             if (!bluetoothRecoveryComplete) throw IOException("Bluetooth recovery did not complete before the handshake")
             val device = selectWirelessBluetoothDevice(adapter)
-            val hostBluetoothMac = accessoryBluetoothMac(adapter)
+            val controllerAddress = com.shilapi.xcertplay.bluetooth.BluetoothControllerAddress.read(
+                appContext,
+                adapterAddress = runCatching { adapter.address }.getOrNull(),
+                synthetic = airPlayConfig.btMac,
+            )
+            val hostBluetoothMac = controllerAddress.address
             debugLog(
                 "wireless selected Bluetooth target name=${device.name ?: "unknown"} " +
                     "address=${device.address} localBt=$hostBluetoothMac",
+            )
+            debugLog(
+                "Bluetooth identity: probes ${controllerAddress.probes} " +
+                    "chosen=${controllerAddress.chosen} localBit=${controllerAddress.localBit}",
+            )
+            debugLog(
+                com.shilapi.xcertplay.bluetooth.BluetoothIdentity.line(
+                    advertised = hostBluetoothMac,
+                    adapter = runCatching { adapter.address }.getOrNull(),
+                    settings = runCatching {
+                        Settings.Secure.getString(appContext.contentResolver, "bluetooth_address")
+                    }.getOrNull(),
+                    wifi = com.shilapi.xcertplay.bluetooth.BluetoothIdentity.wifiAddress(),
+                    role = "sent",
+                    chosen = controllerAddress.chosen,
+                    localBit = controllerAddress.localBit,
+                ),
             )
             val wirelessAirPlayConfig = airPlayConfig.copy(
                 deviceId = deviceIdentifier,
@@ -1699,6 +1730,7 @@ class CarPlayController(
             val sessionActive = activeSession != null
             val frameRendered = wirelessConnectionProof.hasRenderedFrame(generation)
             val airPlaySetupReached = wirelessAirPlayHandshake.reachedSessionSetup(generation)
+            val phoneTcpReached = wirelessAirPlayHandshake.reachedPhoneTcp(generation)
             if (
                 !wirelessActiveReported.get() &&
                 isRfcommEofAfterAirPlaySession(
@@ -1706,6 +1738,7 @@ class CarPlayController(
                     sessionActive = sessionActive,
                     frameRendered = frameRendered,
                     airPlaySetupReached = airPlaySetupReached,
+                    phoneTcpReached = phoneTcpReached,
                 )
             ) {
                 if (sessionActive || frameRendered) {
@@ -1713,10 +1746,16 @@ class CarPlayController(
                         "wireless RFCOMM ended after AirPlay session started; " +
                             "keeping the Wi-Fi AirPlay tunnel alive",
                     )
-                } else {
+                } else if (airPlaySetupReached) {
                     debugLog(
                         "wireless RFCOMM ended after AirPlay SETUP; " +
                             "keeping the Wi-Fi AirPlay tunnel alive pending session",
+                    )
+                    armSetupKeepAlive(generation)
+                } else {
+                    debugLog(
+                        "wireless RFCOMM ended after the phone's AirPlay TCP; " +
+                            "keeping the Wi-Fi AirPlay tunnel alive pending SETUP",
                     )
                     armSetupKeepAlive(generation)
                 }
@@ -2828,6 +2867,10 @@ class CarPlayController(
      * a single byte is not tested at all.
      */
     private fun unrealBluetoothFailure(link: InstantBluetoothLink, trigger: String): WirelessStartupException? {
+        if (com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bluetoothLinkCheckSuspended()) {
+            connectionDiagnostic("Bluetooth link check skipped reason=radio-cycle")
+            return null
+        }
         val received = link.stream.bytesReceived
         if (!BluetoothLinkCheck.looksUnreal(link.connectMillis, received)) return null
         val started = System.nanoTime()
@@ -2888,6 +2931,10 @@ class CarPlayController(
         val failure = result.get() ?: return
         if (BluetoothLinkCheck.socketServiceMissing(failure)) {
             connectionDiagnostic("Bluetooth socket manager missing failureClass=${failure.javaClass.simpleName}")
+            if (com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.bluetoothLinkCheckSuspended()) {
+                debugLog("Bluetooth socket failure during a radio cycle; not declaring Bluetooth unusable")
+                throw IOException("RFCOMM connect failed during a Bluetooth radio cycle", failure)
+            }
         }
         throw BluetoothLinkCheck.connectFailure(failure, address)
     }
@@ -3019,26 +3066,6 @@ class CarPlayController(
             Log.w(IphoneCarPlayConfiguration.TAG, "Timed out reading Bluetooth profile $profile")
         }
         return synchronized(devices) { devices.toSet() }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun accessoryBluetoothMac(adapter: BluetoothAdapter): String {
-        val address = try {
-            adapter.address
-        } catch (_: SecurityException) {
-            null
-        }
-        val settingsAddress = try {
-            Settings.Secure.getString(appContext.contentResolver, "bluetooth_address")
-        } catch (_: SecurityException) {
-            null
-        }
-        return listOfNotNull(address, settingsAddress)
-            .firstOrNull {
-                BLUETOOTH_ADDRESS.matches(it) &&
-                    !it.equals(ADAPTER_ADDRESS_PLACEHOLDER, ignoreCase = true)
-            }
-            ?: airPlayConfig.btMac
     }
 
     private fun flipWirelessAddressFamily(generation: Int) = synchronized(wirelessResourceLock) {
@@ -3397,6 +3424,5 @@ class CarPlayController(
         private const val START_SESSION_PROGRESS = "iap2 tx=0x4301"
         private const val EXECUTOR_CLOSE_TIMEOUT_MILLIS = 2_000L
         private const val ADAPTER_ADDRESS_PLACEHOLDER = "02:00:00:00:00:00"
-        private val BLUETOOTH_ADDRESS = Regex("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
     }
 }

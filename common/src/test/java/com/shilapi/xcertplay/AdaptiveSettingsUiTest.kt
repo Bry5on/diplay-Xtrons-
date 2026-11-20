@@ -764,7 +764,7 @@ class AdaptiveSettingsUiTest {
         assertFalse(advanced.any { it.startsWith(text(R.string.settings_navigation_attenuation)) })
         assertTrue(audio.any { it.startsWith(text(R.string.settings_music_buffer_wireless)) })
         assertTrue(audio.any { it.startsWith(text(R.string.settings_music_buffer_wired)) })
-        listOf(R.string.main_buffered_audio, R.string.settings_car_bluetooth_audio, R.string.efficient_video, R.string.smooth_video, R.string.settings_direct_video_output, R.string.settings_low_latency_decoder, R.string.call_echo_cancellation, R.string.call_voice_filter, R.string.settings_disable_media_key_audio_focus, R.string.contrib_audio_home_toggle_audio_focus).forEach {
+        listOf(R.string.settings_keep_audio_in_carplay, R.string.main_buffered_audio, R.string.settings_car_bluetooth_audio, R.string.efficient_video, R.string.smooth_video, R.string.settings_direct_video_output, R.string.settings_low_latency_decoder, R.string.call_echo_cancellation, R.string.call_voice_filter, R.string.settings_disable_media_key_audio_focus, R.string.contrib_audio_home_toggle_audio_focus).forEach {
             assertTrue(text(it), text(it) in advanced)
             assertFalse(text(it), text(it) in audio)
         }
@@ -775,6 +775,14 @@ class AdaptiveSettingsUiTest {
         assertTrue(text(R.string.settings_navigation_wheel_volume) in advanced)
         assertFalse(text(R.string.settings_navigation_wheel_volume) in audio)
         assertFalse(text(R.string.settings_navigation_wheel_volume) in vehicle)
+        assertTrue(text(R.string.settings_hold_bluetooth_during_calls) in advanced)
+        assertFalse(text(R.string.settings_hold_bluetooth_during_calls) in audio)
+        assertTrue(text(R.string.settings_disconnect_handsfree) in advanced)
+        assertFalse(text(R.string.settings_disconnect_handsfree) in audio)
+        assertTrue(text(R.string.settings_restore_handsfree) in advanced)
+        assertFalse(text(R.string.settings_restore_handsfree) in audio)
+        assertTrue(advanced.any { it.startsWith(text(R.string.settings_head_unit_bluetooth_address)) })
+        assertFalse(audio.any { it.startsWith(text(R.string.settings_head_unit_bluetooth_address)) })
         assertTrue(text(R.string.settings_ambient_title) in advanced)
         assertFalse(text(R.string.settings_ambient_title) in audio)
         assertFalse(text(R.string.settings_ambient_title) in vehicle)

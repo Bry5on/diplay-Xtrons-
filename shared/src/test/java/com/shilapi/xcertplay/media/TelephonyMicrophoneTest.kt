@@ -148,18 +148,24 @@ class TelephonyMicrophoneTest {
 
     @Test fun aCallInTheCarsPhoneStateRecordsFromVoiceRecognitionWithoutCallEffects() {
         val diagnostics = recordDiagnostics()
-        BydOutputSettings.setPhoneAudioRoute(context, true)
+        context.getSharedPreferences("diplay_byd_outputs", 0).edit()
+            .putBoolean("phone_audio_route_experimental", true).commit()
         PhoneAudioRoute.attach(context)
         try {
             sink.onMicrophoneStarted(telephony, config("telephony"))
             val record = awaitCapture()
             assertEquals(MediaRecorder.AudioSource.VOICE_RECOGNITION, record.audioSource)
             // #987: the report said VOICE_COMMUNICATION for these calls, so it could not show the car's phone state.
-            assertTrue(diagnostics.joinToString("\n"),
-                diagnostics.any { it.startsWith("Microphone: start type=telephony source=VOICE_RECOGNITION ") })
+            val call = diagnostics.first { it.startsWith("Microphone: start type=telephony") }
+            assertTrue(call, call.contains("source=VOICE_RECOGNITION"))
+            assertTrue(call, call.contains("path=${MicrophonePath.CARPLAY_MIC_CAR_PHONE_STATE}"))
+            assertTrue(call, call.contains("carPhoneAudio=true"))
+            assertTrue(call, call.contains("aecEnabled=false"))
+            assertTrue(call, call.contains("effects=car-phone-audio"))
             assertTrue(ShadowAudioEffect.getAudioEffects().isEmpty())
         } finally {
-            BydOutputSettings.setPhoneAudioRoute(context, false)
+            context.getSharedPreferences("diplay_byd_outputs", 0).edit()
+                .putBoolean("phone_audio_route_experimental", false).commit()
         }
     }
 
@@ -197,6 +203,27 @@ class TelephonyMicrophoneTest {
         sink.onMicrophoneStarted(telephony, config("telephony"))
         assertEquals(MediaRecorder.AudioSource.VOICE_COMMUNICATION, awaitCapture().audioSource)
         assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+    }
+
+    @Test fun telephonyReportsTheCarPlayMicPathAndSiriStaysSeparate() {
+        val diagnostics = recordDiagnostics()
+        sink.onMicrophoneStarted(telephony, config("telephony"))
+        awaitCapture()
+        val call = diagnostics.first { it.startsWith("Microphone: start type=telephony") }
+        assertTrue(call, call.contains("path=${MicrophonePath.CARPLAY_MIC_VOICE_COMMUNICATION}"))
+        assertTrue(call, call.contains("aecEnabled=true"))
+        assertTrue(call, call.contains("nsEnabled=true"))
+        assertTrue(call, call.contains("clientSilenced="))
+        assertTrue(call, call.contains("audioMode="))
+        assertTrue(call, call.contains("effects=platform"))
+        sink.onMicrophoneStopped(telephony)
+
+        sink.onMicrophoneStarted(speechRecognition, config("speechrecognition"))
+        val siri = diagnostics.first { it.startsWith("Microphone: start type=speechrecognition") }
+        assertTrue(siri, siri.contains("path=${MicrophonePath.SIRI}"))
+        assertTrue(siri, siri.contains("aecEnabled=false"))
+        assertTrue(siri, siri.contains("effects=not-call"))
+        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
     }
 
     @Test fun speechRecognitionDoesNotChangeModeOrEnableTelephonyEffects() {

@@ -390,6 +390,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         // before showing anything, so the cluster is not left on DiPlay's last frame.
         GeelyClusterProjection.releaseStale(applicationContext)
         PhoneAudioRoute.attach(applicationContext)
+        com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.recoverAbandoned(applicationContext)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= 28) {
             window.attributes = window.attributes.apply {
@@ -1984,6 +1985,25 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         // Opt-in controls that can cost sound or video on some head units.
         filteredSection(content, SettingsSection.ADVANCED_MEDIA,
             getString(R.string.settings_advanced_media), R.drawable.ic_dp_advanced) { card ->
+            toggle(card, getString(R.string.settings_keep_audio_in_carplay),
+                getString(R.string.settings_keep_audio_in_carplay_description),
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.enabled(this)) { on ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.setEnabled(this, on)
+            }
+            headUnitBluetoothAddress(card)
+            toggle(card, getString(R.string.settings_hold_bluetooth_during_calls),
+                getString(R.string.settings_hold_bluetooth_during_calls_description),
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.holdRadioDuringCalls(this)) { on ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.setHoldRadioDuringCalls(this, on)
+            }
+            toggle(card, getString(R.string.settings_disconnect_handsfree),
+                getString(R.string.settings_disconnect_handsfree_description),
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.disconnectHandsfree(this)) { on ->
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.setHandsfreeDisconnect(this, on)
+            }
+            card.addView(button(getString(R.string.settings_restore_handsfree), false) {
+                com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.restoreHandsfree()
+            }, matchButton(10, 60))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && CarHotspotSetup.isBydHeadUnit(this)) {
                 toggle(card, getString(R.string.settings_hide_byd_call_popup),
                     getString(R.string.settings_hide_byd_call_popup_description),
@@ -5345,6 +5365,45 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         toast(getString(R.string.saved_for_your_next_connection))
     }
 
+    private fun headUnitBluetoothAddress(card: LinearLayout) {
+        val title = getString(R.string.settings_head_unit_bluetooth_address)
+        fun shown() = com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.manualAddress(this)
+            ?: getString(R.string.settings_head_unit_bluetooth_address_not_set)
+        fun summary() = getString(R.string.contrib_audio_home_choice_summary, title, shown())
+        val control = button(summary(), false) {}
+        control.setOnClickListener {
+            val fields = column().apply { setPadding(dp(24), dp(8), dp(24), dp(8)) }
+            val input = EditText(appDialogContext()).apply {
+                setSingleLine()
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                setText(com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.manualAddress(this@DiPlayActivity).orEmpty())
+            }
+            fields.addView(input)
+            fields.addView(label(getString(R.string.settings_head_unit_bluetooth_address_description), 14, MUTED))
+            val dialog = appDialogBuilder().setTitle(title).setView(fields)
+                .setPositiveButton(getString(R.string.save), null)
+                .setNegativeButton(getString(R.string.cancel), null)
+                .create()
+            dialog.setOnShowListener {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val normalized = com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference
+                        .normalizeManualAddress(input.text.toString())
+                    if (normalized == null) {
+                        toast(getString(R.string.settings_head_unit_bluetooth_address_invalid))
+                        return@setOnClickListener
+                    }
+                    com.shilapi.xcertplay.bluetooth.BluetoothAudioPreference.setManualAddress(this, normalized)
+                    markReconnectNeeded()
+                    control.text = summary()
+                    dialog.dismiss()
+                }
+            }
+            dialog.show()
+        }
+        card.addView(control)
+    }
+
     private fun textInput(title: String, current: String, secret: Boolean, save: (String) -> Unit) {
         val input = EditText(appDialogContext()).apply {
             setText(current)
@@ -5994,6 +6053,9 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         appendLine("Head-unit board: ${Build.BOARD}; hardware: ${Build.HARDWARE}; build: ${Build.DISPLAY}")
         appendLine()
         appendLine(BluetoothDiagnosticSnapshot.report(appContext))
+        appendLine("--- Bluetooth audio profiles ---")
+        appendLine(com.shilapi.xcertplay.bluetooth.BluetoothAudioGate.report(appContext))
+        appendLine(com.shilapi.xcertplay.bluetooth.FactoryBluetoothSnapshot.latest)
         appendLine()
         appendLine("--- Current cluster display diagnostics (even when disabled) ---")
         appendLine(ClusterMapPresentation.diagnosticReport(appContext))
